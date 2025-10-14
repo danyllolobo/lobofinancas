@@ -1,0 +1,70 @@
+/* Gradiente de fundo e animações */
+.gradient-bg {
+  background: radial-gradient(1200px 600px at 20% 20%, rgba(74,105,189,0.15), transparent),
+              radial-gradient(800px 400px at 80% 0%, rgba(142,68,173,0.12), transparent),
+              linear-gradient(180deg, #f5f7fa, #eef1f7);
+}
+
+.animate-fade-in { animation: fadeIn 280ms ease-out both; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Utilitários */
+.input { padding: 0.6rem 0.75rem; border-radius: 0.5rem; border: 1px solid rgba(100,116,139,.3); background: white; }
+.select { padding: 0.6rem 0.75rem; border-radius: 0.5rem; border: 1px solid rgba(100,116,139,.3); background: white; width: 100%; }
+.btn-primary { padding: 0.6rem 0.75rem; border-radius: 0.75rem; background: #4a69bd; color: white; }
+.btn-secondary { padding: 0.6rem 0.75rem; border-radius: 0.75rem; background: #e2e8f0; }
+.btn-danger { padding: 0.6rem 0.75rem; border-radius: 0.75rem; background: #e74c3c; color: white; }
+.card { background: white; border-radius: 0.75rem; box-shadow: 0 10px 24px rgba(0,0,0,.06); padding: 1rem; }
+
+.dark .input, .dark .select { background: #2d3748; border-color: #475569; color: #e2e8f0; }
+.dark .card { background: #2d3748; }
+.menu-item { display: block; width: 100%; text-align: left; padding: .5rem .75rem; border-radius: .5rem; }
+.menu-item:hover { background: rgba(148,163,184,.25); }
+
+.nav-link { display: block; padding: .5rem .75rem; border-radius: .5rem; color: #334155; }
+.nav-link.active, .nav-link:hover { background: rgba(74,105,189,.12); color: #1e293b; }
+.dark .nav-link { color: #e2e8f0; }
+.dark .nav-link.active, .dark .nav-link:hover { background: rgba(74,105,189,.25); }
+
+/* FAB */
+.fab { position: fixed; right: 1.25rem; bottom: 1.25rem; width: 3rem; height: 3rem; border-radius: 9999px; background: #4a69bd; color: white; font-size: 1.5rem; line-height: 3rem; text-align: center; box-shadow: 0 12px 28px rgba(74,105,189,.35); }
+.fab-menu { position: fixed; right: 1.25rem; bottom: 5.5rem; display: flex; flex-direction: column; gap: .5rem; }
+
+/* Modal */
+.modal { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: grid; place-items: center; padding: 1rem; }
+.modal-content { width: 100%; max-width: 720px; background: white; border-radius: 1rem; box-shadow: 0 20px 40px rgba(0,0,0,.18); padding: 1rem; }
+.dark .modal-content { background: #2d3748; }
+
+/* Sidebar móvel e overlay */
+.sidebar { width: 16rem; background: white; border-right: 1px solid rgba(226,232,240,.8); }
+.dark .sidebar { background: #2d3748; border-right-color: #475569; }
+.sidebar { position: fixed; left: 0; top: 0; height: 100vh; transform: translateX(-100%); transition: transform .25s ease; z-index: 30; }
+.sidebar.open { transform: translateX(0); }
+@media (min-width: 768px) {
+  .sidebar { position: relative; transform: none; height: auto; }
+}
+.sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 20; }
+
+/* Container responsivo */
+.container-responsive { width: 100%; max-width: 1280px; margin: 0 auto; padding: 1rem; }
+@media (min-width: 768px) { .container-responsive { padding: 1.5rem; } }
+
+/* Cartões e tema dark refinado */
+.card { border: 1px solid rgba(226,232,240,.8); }
+.dark .card { border-color: #475569; box-shadow: 0 10px 24px rgba(0,0,0,.25); }
+.dark .input, .dark .select { background: #1f2937; border-color: #334155; color: #e2e8f0; }
+.btn-primary:hover { filter: brightness(1.05); }
+.dark .btn-secondary { background: #475569; color: #e2e8f0; }
+
+/* Gráficos responsivos */
+.chart-card { min-height: 260px; }
+@media (min-width: 1024px) { .chart-card { min-height: 340px; } }
+
+/* Pílulas de status */
+.pill { display: inline-block; padding: .25rem .5rem; border-radius: 9999px; font-size: .75rem; }
+.pill-green { background: #d1fae5; color: #065f46; }
+.dark .pill-green { background: #065f46; color: #d1fae5; }
+.pill-gray { background: #e5e7eb; color: #374151; }
+.dark .pill-gray { background: #374151; color: #e5e7eb; }
+.pill-orange { background: #ffedd5; color: #9a3412; }
+.dark .pill-orange { background: #9a3412; color: #ffedd5; }
