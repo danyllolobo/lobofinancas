@@ -266,8 +266,73 @@
                 </div>
               </div>
             </section>
-            <section id="view-reports" class="hidden">
-              <div class="card">Relatórios (em breve)</div>
+            <section id="view-reports" class="hidden space-y-4">
+              <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+                <!-- Painel de Filtros -->
+                <aside class="card md:col-span-1 space-y-3">
+                  <h3 class="text-sm font-semibold">Filtros</h3>
+                  <div>
+                    <label class="block text-sm mb-1">Tipo de Relatório</label>
+                    <select id="rep-type" class="select">
+                      <option value="dre">DRE</option>
+                      <option value="cash-daily">Fluxo de Caixa Diário</option>
+                      <option value="cash-monthly">Fluxo de Caixa Mensal</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label class="block text-sm mb-1">Status</label>
+                    <label class="flex items-center gap-2"><input type="checkbox" id="rep-status-realizado" checked /><span>Realizado</span></label>
+                    <label class="flex items-center gap-2"><input type="checkbox" id="rep-status-projetado" checked /><span>Projetado</span></label>
+                  </div>
+                  <div>
+                    <label class="block text-sm mb-1">Período</label>
+                    <select id="rep-period" class="select">
+                      <option value="este_mes">Este Mês</option>
+                      <option value="mes_passado">Mês Passado</option>
+                      <option value="este_ano">Este Ano</option>
+                      <option value="ultimos_90">Últimos 90 dias</option>
+                      <option value="custom">Personalizado</option>
+                    </select>
+                    <div id="rep-period-custom" class="grid grid-cols-1 md:grid-cols-2 gap-2 mt-2 hidden">
+                      <input type="text" id="rep-date-from" class="input" placeholder="Início (dd/mm/aaaa)" />
+                      <input type="text" id="rep-date-to" class="input" placeholder="Fim (dd/mm/aaaa)" />
+                    </div>
+                  </div>
+                  <div>
+                    <label class="block text-sm mb-1">Contas Bancárias</label>
+                    <select id="rep-accounts" class="select" multiple size="5"></select>
+                  </div>
+                  <div>
+                    <label class="block text-sm mb-1">Centros de Custo</label>
+                    <select id="rep-costcenters" class="select" multiple size="5"></select>
+                  </div>
+                  <div class="flex gap-2 justify-end">
+                    <button id="rep-apply" class="btn-primary">Aplicar Filtros</button>
+                    <button id="rep-clear" class="btn-secondary">Limpar Filtros</button>
+                  </div>
+                </aside>
+                <!-- Área de Visualização -->
+                <div class="md:col-span-2">
+                  <div id="rep-output-empty" class="card">
+                    <p class="text-sm text-slate-600 dark:text-slate-300">Selecione os filtros à esquerda e clique em <strong>Aplicar Filtros</strong> para gerar o relatório.</p>
+                  </div>
+                  <div id="rep-output" class="hidden space-y-3">
+                    <div class="card flex items-center justify-between">
+                      <div>
+                        <h3 id="rep-title" class="text-lg font-semibold">Relatório</h3>
+                        <p id="rep-period-label" class="text-sm text-slate-600 dark:text-slate-300">—</p>
+                      </div>
+                      <div class="flex gap-2">
+                        <button id="rep-pdf" class="btn-secondary">Gerar PDF</button>
+                        <button id="rep-excel" class="btn-secondary">Gerar Excel</button>
+                      </div>
+                    </div>
+                    <div class="card overflow-x-auto">
+                      <table id="rep-table" class="w-full text-sm"></table>
+                    </div>
+                  </div>
+                </div>
+              </div>
             </section>
             <section id="view-accounts" class="hidden">
               <div class="space-y-3">

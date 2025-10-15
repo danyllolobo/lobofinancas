@@ -277,3 +277,90 @@ main.flex-1 {
 /* Light tinted backgrounds for dashboard icons */
 .bg-income\/20 { background-color: rgba(46, 204, 113, 0.20); }
 .bg-expense\/20 { background-color: rgba(231, 76, 60, 0.20); }
+
+/* =====================
+   AJUSTES DE DARK MODE, RESPONSIVIDADE E iOS
+   ===================== */
+
+/* Variáveis complementares */
+:root {
+  --color-dark-muted: #94a3b8;   /* Texto secundário no dark */
+  --color-light-muted: #475569;  /* Texto secundário no light */
+}
+
+/* Transições suaves de tema (respeitando acessibilidade) */
+@media (prefers-reduced-motion: no-preference) {
+  body, .card, .input, .select, .btn-primary, .btn-secondary, .nav-link, header {
+    transition: background-color .25s ease, color .25s ease, border-color .25s ease, box-shadow .25s ease;
+  }
+}
+
+/* Foco acessível visível em controles interativos */
+.input:focus-visible, .select:focus-visible, .btn-primary:focus-visible, .btn-secondary:focus-visible, .nav-link:focus-visible, button:focus-visible {
+  outline: 2px solid var(--color-accent);
+  outline-offset: 2px;
+}
+
+/* Placeholder e opções no dark */
+.dark .input::placeholder { color: #64748b; }
+.dark .select option { color: var(--color-dark-muted); background-color: var(--color-dark-card); }
+
+/* Header com blur compatível (iOS Safari) */
+header { -webkit-backdrop-filter: saturate(180%) blur(8px); backdrop-filter: saturate(180%) blur(8px); }
+
+/* Tabelas (Transações e similares) dentro de cards */
+.card table { width: 100%; border-collapse: collapse; }
+.card table thead th {
+  text-align: left;
+  padding: .6rem .75rem;
+  font-weight: 600;
+  border-bottom: 1px solid #e2e8f0;
+  background-color: #f8fafc;
+  color: #334155;
+}
+.dark .card table thead th { border-color: #334155; background-color: #0b1220; color: #e2e8f0; }
+.card table tbody td { padding: .5rem .75rem; border-top: 1px solid #e2e8f0; vertical-align: middle; }
+.dark .card table tbody td { border-color: #334155; }
+.card table tbody tr:hover { background-color: #f1f5f9; }
+.dark .card table tbody tr:hover { background-color: #1f2937; }
+
+/* Última coluna (Ações) mais confortável em telas pequenas */
+@media (max-width: 640px) { #view-transactions .card table td:last-child { white-space: nowrap; } }
+
+/* Barra de ações em massa (legibilidade) */
+#tx-massbar { color: #334155; }
+.dark #tx-massbar { color: #e2e8f0; }
+
+/* Menu do perfil e itens (dark consistente) */
+.menu-item { display: block; width: 100%; text-align: left; padding: .5rem .75rem; }
+.menu-item:hover { background-color: #f1f5f9; }
+.dark #profile-menu { background-color: var(--color-dark-card); }
+.dark .menu-item { color: #e2e8f0; }
+.dark .menu-item:hover { background-color: #334155; }
+
+/* Ajustes de filtros em telas pequenas (iPhone) */
+@media (max-width: 640px) {
+  #view-transactions .select, #view-transactions #btn-import { width: 100%; }
+}
+
+/* Scroll suave somente em cards que precisam (tabelas largas) */
+.card { -webkit-overflow-scrolling: auto; }
+.card.overflow-x-auto { -webkit-overflow-scrolling: touch; }
+
+/* Evitar scroll estranho ao abrir selects em containers flex */
+@media (max-width: 640px) {
+  .flex .select, .flex .input { min-width: 0; }
+}
+
+/* Evitar scroll horizontal no body/main em mobile */
+body, main { overflow-x: hidden; }
+
+/* Alvo de toque confortável no mobile */
+@media (max-width: 640px) {
+  .input, .select { min-height: 44px; }
+}
+
+/* Evitar zoom automático em inputs no iPhone (mantendo legibilidade) */
+@supports (-webkit-touch-callout: none) {
+  input, select, textarea { font-size: 16px; }
+}

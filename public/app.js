@@ -127,6 +127,9 @@ function setRoute(route) {
   if (route === 'transactions') {
     initTransactions();
   }
+  if (route === 'reports') {
+    initReports();
+  }
   if (route === 'accounts') {
     initAccounts();
   }
@@ -1641,6 +1644,251 @@ function renderPaymentMethodsWithFees(paymentMethods, fees) {
       });
     }
   });
+}
+
+// =====================
+// Reports screen
+// =====================
+function initReports() {
+  const accSel = qs('#rep-accounts');
+  const ccSel = qs('#rep-costcenters');
+  const accounts = state.catalogs?.accounts || [];
+  const ccs = state.catalogs?.cost_centers || [];
+  if (accSel) accSel.innerHTML = accounts.map(a=> `<option value="${a.id}">${a.name}</option>`).join('');
+  if (ccSel) ccSel.innerHTML = ccs.map(c=> `<option value="${c.id}">${c.name}</option>`).join('');
+
+  const periodSel = qs('#rep-period');
+  const customWrap = qs('#rep-period-custom');
+  if (periodSel && customWrap && !periodSel._bound) {
+    periodSel._bound = true;
+    periodSel.addEventListener('change', () => {
+      customWrap.classList.toggle('hidden', periodSel.value !== 'custom');
+    });
+  }
+  const btnApply = qs('#rep-apply');
+  const btnClear = qs('#rep-clear');
+  if (btnApply && !btnApply._bound) { btnApply._bound = true; btnApply.addEventListener('click', applyReportFilters); }
+  if (btnClear && !btnClear._bound) {
+    btnClear._bound = true;
+    btnClear.addEventListener('click', () => {
+      qs('#rep-type').value = 'dre';
+      qs('#rep-status-realizado').checked = true;
+      qs('#rep-status-projetado').checked = true;
+      qs('#rep-period').value = 'este_mes';
+      customWrap.classList.add('hidden');
+      qs('#rep-date-from').value = '';
+      qs('#rep-date-to').value = '';
+      qsa('#rep-accounts option').forEach(o=> o.selected = false);
+      qsa('#rep-costcenters option').forEach(o=> o.selected = false);
+      showReportEmpty();
+    });
+  }
+
+  const btnPdf = qs('#rep-pdf');
+  const btnExcel = qs('#rep-excel');
+  if (btnPdf && !btnPdf._bound) { btnPdf._bound = true; btnPdf.addEventListener('click', exportReportPDF); }
+  if (btnExcel && !btnExcel._bound) { btnExcel._bound = true; btnExcel.addEventListener('click', exportReportCSV); }
+
+  showReportEmpty();
+}
+
+function showReportEmpty() {
+  const empty = qs('#rep-output-empty');
+  const out = qs('#rep-output');
+  if (empty) empty.classList.remove('hidden');
+  if (out) out.classList.add('hidden');
+}
+
+function showReportOutput() {
+  const empty = qs('#rep-output-empty');
+  const out = qs('#rep-output');
+  if (empty) empty.classList.add('hidden');
+  if (out) out.classList.remove('hidden');
+}
+
+function getSelectedValues(selectEl) {
+  const vals = [];
+  if (!selectEl) return vals;
+  for (const opt of selectEl.options) { if (opt.selected) vals.push(opt.value); }
+  return vals;
+}
+
+function parseDateBR(str) {
+  if (!str) return null;
+  const m = String(str).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return null;
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+
+function formatDateBR(yyyy_mm_dd) {
+  if (!yyyy_mm_dd) return '';
+  const [y,m,d] = String(yyyy_mm_dd).split('-');
+  return `${d}/${m}/${y}`;
+}
+
+function labelPeriod(period, from, to) {
+  const now = new Date();
+  if (period === 'este_mes') return `Este Mês (${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()})`;
+  if (period === 'mes_passado') {
+    const dt = new Date(now.getFullYear(), now.getMonth()-1, 1);
+    return `Mês Passado (${String(dt.getMonth()+1).padStart(2,'0')}/${dt.getFullYear()})`;
+  }
+  if (period === 'este_ano') return `Este Ano (${now.getFullYear()})`;
+  if (period === 'ultimos_90') return 'Últimos 90 dias';
+  if (period === 'custom') return `Personalizado (${formatDateBR(from)} a ${formatDateBR(to)})`;
+  return 'Período';
+}
+
+async function applyReportFilters() {
+  const type = qs('#rep-type').value;
+  const statusRealizado = qs('#rep-status-realizado').checked;
+  const statusProjetado = qs('#rep-status-projetado').checked;
+  const statusParam = (!statusRealizado && !statusProjetado) ? 'todas' : (!statusRealizado ? 'projetado' : (!statusProjetado ? 'realizado' : 'todas'));
+  const period = qs('#rep-period').value;
+  const fromStr = parseDateBR(qs('#rep-date-from').value);
+  const toStr = parseDateBR(qs('#rep-date-to').value);
+  const accIds = getSelectedValues(qs('#rep-accounts'));
+  const ccIds = getSelectedValues(qs('#rep-costcenters'));
+
+  const params = { company_id: state.currentCompanyId, status: statusParam };
+  const now = new Date();
+  if (period === 'este_mes') {
+    params.year = String(now.getFullYear());
+    params.month = String(now.getMonth()+1).padStart(2,'0');
+  } else if (period === 'mes_passado') {
+    const dt = new Date(now.getFullYear(), now.getMonth()-1, 1);
+    params.year = String(dt.getFullYear());
+    params.month = String(dt.getMonth()+1).padStart(2,'0');
+  } else if (period === 'este_ano') {
+    params.year = String(now.getFullYear());
+    params.month = 'todos';
+  }
+
+  const res = await apiTransactions('list', params);
+  let items = res.items || [];
+  if (accIds.length) items = items.filter(t => accIds.includes(t.account_id));
+  if (ccIds.length) items = items.filter(t => ccIds.includes(t.cost_center_id));
+  if (period === 'ultimos_90') {
+    const end = new Date();
+    const start = new Date(end.getTime() - 89*24*60*60*1000);
+    items = items.filter(t => { const dt = new Date(t.date); return dt >= start && dt <= end; });
+  } else if (period === 'custom' && fromStr && toStr) {
+    const start = new Date(fromStr);
+    const end = new Date(toStr);
+    items = items.filter(t => { const dt = new Date(t.date); return dt >= start && dt <= end; });
+  }
+
+  const periodLabel = labelPeriod(period, fromStr, toStr);
+  const agg = aggregateReport(items, type);
+  state.reports = { type, period, periodLabel, rows: agg.rows, summary: agg.summary };
+  renderReport(state.reports);
+  showReportOutput();
+}
+
+function aggregateReport(items, type) {
+  const rows = [];
+  const summary = { totalIncome: 0, totalExpense: 0 };
+  const netOf = (t) => t.type==='income' ? (t.amount - (t.fee_percent ? t.amount*t.fee_percent : 0)) : -t.amount;
+  const catMap = Object.fromEntries((state.catalogs?.categories||[]).map(c=> [c.id, c.name]));
+
+  if (type === 'dre') {
+    const byCat = {};
+    for (const t of items) {
+      const key = `${t.type}:${t.category_id||'—'}`;
+      byCat[key] = (byCat[key] || 0) + netOf(t);
+      if (t.type==='income') summary.totalIncome += netOf(t); else summary.totalExpense += -netOf(t);
+    }
+    for (const [key, val] of Object.entries(byCat)) {
+      const [typ, cat] = key.split(':');
+      rows.push({ label: catMap[cat] || '—', type: typ, income: typ==='income'?Math.abs(val):0, expense: typ==='expense'?Math.abs(val):0, net: val });
+    }
+    rows.sort((a,b)=> Math.abs(b.net) - Math.abs(a.net));
+  } else if (type === 'cash-daily') {
+    const byDay = {};
+    for (const t of items) {
+      const day = t.date;
+      const amt = netOf(t);
+      const cur = byDay[day] || { income:0, expense:0 };
+      if (t.type==='income') cur.income += Math.abs(amt); else cur.expense += Math.abs(amt);
+      byDay[day] = cur;
+    }
+    const days = Object.keys(byDay).sort((a,b)=> a.localeCompare(b));
+    let running = 0;
+    for (const d of days) {
+      const inc = byDay[d].income, exp = byDay[d].expense;
+      running += inc - exp; summary.totalIncome += inc; summary.totalExpense += exp;
+      rows.push({ label: formatDateBR(d), type: 'day', income: inc, expense: exp, net: inc-exp, running });
+    }
+  } else if (type === 'cash-monthly') {
+    const byMonth = {};
+    for (const t of items) {
+      const m = (t.date||'').slice(0,7);
+      const amt = netOf(t);
+      const cur = byMonth[m] || { income:0, expense:0 };
+      if (t.type==='income') cur.income += Math.abs(amt); else cur.expense += Math.abs(amt);
+      byMonth[m] = cur;
+    }
+    const months = Object.keys(byMonth).sort((a,b)=> a.localeCompare(b));
+    let running = 0;
+    for (const m of months) {
+      const inc = byMonth[m].income, exp = byMonth[m].expense;
+      running += inc - exp; summary.totalIncome += inc; summary.totalExpense += exp;
+      const [y,mm] = m.split('-');
+      rows.push({ label: `${mm}/${y}`, type: 'month', income: inc, expense: exp, net: inc-exp, running });
+    }
+  }
+  return { rows, summary };
+}
+
+function renderReport(rep) {
+  qs('#rep-title').textContent = rep.type === 'dre'
+    ? 'DRE — Demonstrativo de Resultados'
+    : (rep.type === 'cash-daily' ? 'Fluxo de Caixa Diário' : 'Fluxo de Caixa Mensal');
+  qs('#rep-period-label').textContent = rep.periodLabel || '';
+  const tbl = qs('#rep-table');
+  const head = `<thead><tr>
+    <th class="text-left py-2 pr-3">${rep.type==='dre'?'Categoria':'Período'}</th>
+    <th class="text-right py-2 pr-3">Receitas</th>
+    <th class="text-right py-2 pr-3">Despesas</th>
+    <th class="text-right py-2 pr-3">Saldo</th>
+    ${rep.type!=='dre'?'<th class="text-right py-2 pr-3">Acumulado</th>':''}
+  </tr></thead>`;
+  const body = `<tbody>${rep.rows.map(r => {
+    const netClass = r.net>=0 ? 'text-income' : 'text-expense';
+    return `<tr>
+      <td class="py-2 pr-3">${r.label}</td>
+      <td class="py-2 pr-3 text-right">${formatBRL(r.income||0)}</td>
+      <td class="py-2 pr-3 text-right">${formatBRL(r.expense||0)}</td>
+      <td class="py-2 pr-3 text-right ${netClass}">${formatBRL(r.net||0)}</td>
+      ${rep.type!=='dre'?`<td class="py-2 pr-3 text-right">${formatBRL(r.running||0)}</td>`:''}
+    </tr>`;
+  }).join('')}</tbody>`;
+  const foot = `<tfoot><tr>
+    <td class="py-2 pr-3 font-semibold">Totais</td>
+    <td class="py-2 pr-3 text-right font-semibold">${formatBRL(rep.summary.totalIncome||0)}</td>
+    <td class="py-2 pr-3 text-right font-semibold">${formatBRL(rep.summary.totalExpense||0)}</td>
+    <td class="py-2 pr-3 text-right font-semibold">${formatBRL((rep.summary.totalIncome||0)-(rep.summary.totalExpense||0))}</td>
+    ${rep.type!=='dre'?'<td></td>':''}
+  </tr></tfoot>`;
+  tbl.innerHTML = head + body + foot;
+}
+
+function exportReportCSV() {
+  const rep = state.reports; if (!rep) return;
+  const header = [rep.type==='dre'?'Categoria':'Período','Receitas','Despesas','Saldo'].concat(rep.type!=='dre'?['Acumulado']:[]);
+  const rows = rep.rows.map(r => [r.label, r.income||0, r.expense||0, r.net||0].concat(rep.type!=='dre'?[r.running||0]:[]));
+  const csv = [header].concat(rows).map(cols => cols.map(v => typeof v==='number'?String(v).replace('.',','):('"'+String(v).replace('"','""')+'"')).join(';')).join('\n');
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a'); a.href = url; a.download = `relatorio_${rep.type}.csv`; a.click(); URL.revokeObjectURL(url);
+}
+
+function exportReportPDF() {
+  const el = qs('#rep-output'); if (!el) return;
+  const w = window.open('', '_blank');
+  const styles = Array.from(document.querySelectorAll('link[rel="stylesheet"], style')).map(s=> s.outerHTML).join('');
+  w.document.write(`<!doctype html><html><head><meta charset="utf-8">${styles}<title>Relatório</title></head><body class="light">${el.outerHTML}</body></html>`);
+  w.document.close(); w.focus(); setTimeout(() => { w.print(); w.close(); }, 300);
 }
 
 function bindCatalogForms() {
