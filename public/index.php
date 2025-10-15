@@ -303,6 +303,26 @@
                     <tbody id="acc-table-body"></tbody>
                   </table>
                 </div>
+                <!-- Paginação de Contas -->
+                <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                  <div class="flex items-center gap-2">
+                    <span class="text-sm text-slate-600 dark:text-slate-300">Registros por página</span>
+                    <select id="acc-page-size" class="select">
+                      <option value="10">10</option>
+                      <option value="50">50</option>
+                      <option value="100">100</option>
+                      <option value="500">500</option>
+                    </select>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <button id="acc-page-prev" class="btn-secondary">Anterior</button>
+                    <span id="acc-page-info" class="text-sm">Página 1 de 1</span>
+                    <button id="acc-page-next" class="btn-secondary">Próxima</button>
+                  </div>
+                  <div class="flex items-center gap-2">
+                    <span id="acc-counter" class="text-sm text-slate-600 dark:text-slate-300">Exibindo 0–0 de 0</span>
+                  </div>
+                </div>
               </div>
             </section>
             <section id="view-catalogs" class="hidden space-y-4">

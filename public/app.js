@@ -11,7 +11,12 @@ const state = {
   transactions: [],
   // Paginação de Transações
   txPage: 1,
-  txPageSize: 50,
+  txPageSize: 10,
+  // Paginação de Contas
+  accPage: 1,
+  accPageSize: 10,
+  accItems: [],
+  accOpening: 0,
   // Guards to avoid duplicate event bindings on Catalogs screen
   catalogFormsBound: false,
   catalogDefaultBound: false,
@@ -27,8 +32,16 @@ function formatBRL(value) {
 function parseBRLToFloat(str) {
   if (typeof str === 'number') return str;
   if (!str) return 0;
-  // Normalize Brazilian currency string like "1.234,56" to float
-  const normalized = String(str).replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.');
+  // Remove todos os caracteres exceto números, vírgula e ponto
+  const cleaned = String(str).replace(/[^0-9,.-]/g, '');
+  // Se tiver vírgula, remove todos os pontos (são separadores de milhar) e substitui a vírgula por ponto
+  if (cleaned.includes(',')) {
+    const normalized = cleaned.replace(/\./g, '').replace(',', '.');
+    const num = parseFloat(normalized);
+    return isNaN(num) ? 0 : num;
+  }
+  // Se não tiver vírgula, remove todos os pontos (são separadores de milhar)
+  const normalized = cleaned.replace(/\./g, '');
   const num = parseFloat(normalized);
   return isNaN(num) ? 0 : num;
 }
@@ -514,13 +527,21 @@ function populateFiltersFromCatalogs() {
   }
   const accSel = qs('#acc-select');
   if (accSel) {
-    accSel.innerHTML = (state.catalogs?.accounts||[]).map(a=> `<option value="${a.id}">${a.name}</option>`).join('');
+    const accounts = state.catalogs?.accounts || [];
+    accSel.innerHTML = accounts.map(a=> `<option value="${a.id}">${a.name}</option>`).join('');
+    const defAcc = accounts.find(a => a.is_default) || accounts[0];
+    if (defAcc) accSel.value = defAcc.id;
   }
 }
 
 function populateModalFromCatalogs() {
   const accSel = qs('#tx-account');
-  accSel.innerHTML = (state.catalogs?.accounts||[]).map(a=> `<option value="${a.id}">${a.name}</option>`).join('');
+  {
+    const accounts = state.catalogs?.accounts || [];
+    accSel.innerHTML = accounts.map(a=> `<option value="${a.id}">${a.name}</option>`).join('');
+    const defAcc = accounts.find(a => a.is_default) || accounts[0];
+    if (defAcc) accSel.value = defAcc.id;
+  }
   const pmSel = qs('#tx-payment');
   pmSel.innerHTML = (state.catalogs?.payment_methods||[]).map(p=> `<option value="${p.id}">${p.name}</option>`).join('');
   const ccSel = qs('#tx-cost-center');
@@ -733,7 +754,7 @@ function initTransactions() {
   if (sizeSel) {
     sizeSel.value = String(state.txPageSize);
     sizeSel.addEventListener('change', () => {
-      state.txPageSize = parseInt(sizeSel.value || '50', 10);
+      state.txPageSize = parseInt(sizeSel.value || '10', 10);
       state.txPage = 1;
       renderTxTable(state.transactions);
     });
@@ -777,7 +798,7 @@ function renderTxTable(items) {
   const cats = state.catalogs?.categories || [];
   const catName = (id) => (cats.find(c=> c.id===id)?.name || '-');
   // Paginação
-  const pageSize = state.txPageSize || 50;
+  const pageSize = state.txPageSize || 10;
   const total = (items||[]).length;
   const totalPages = Math.max(1, Math.ceil(total / pageSize));
   if (state.txPage > totalPages) state.txPage = totalPages;
@@ -788,13 +809,13 @@ function renderTxTable(items) {
   tbody.innerHTML = slice.map(t => `
     <tr class="border-b border-slate-200 dark:border-slate-700">
       <td class="py-2 pr-3"><input type="checkbox" class="tx-select" data-id="${t.id}" /></td>
-      <td class="py-2 pr-3">${t.date}</td>
+      <td class="py-2 pr-3">${formatISOToBR(t.date)}</td>
       <td class="py-2 pr-3">${t.description}</td>
       <td class="py-2 pr-3">${catName(t.category_id)}</td>
       <td class="py-2 pr-3 ${t.type==='income'?'text-income':'text-expense'}">${formatBRL(t.amount)}</td>
-      <td class="py-2 pr-3"><span class="pill ${t.status ? 'pill-green' : 'pill-gray'}">${t.status?'Concluído':'Pendente'}</span></td>
+      <td class="py-2 pr-3"><span class="pill ${t.status ? 'pill-green' : 'pill-gray'}">${t.status?'Pago':'Pendente'}</span></td>
       <td class="py-2 pr-3">
-        <button title="${t.status?'Estornar':'Quitar'}" class="px-2 py-1 rounded bg-slate-100 dark:bg-slate-700 mr-2 btn-toggle-tx" data-id="${t.id}">${t.status?'⟳':'✓'}</button>
+        <button title="${t.status?'Marcar como pendente':'Marcar como pago'}" class="px-2 py-1 rounded hover:${t.status?'text-red-700':'text-green-700'} bg-slate-100 dark:bg-slate-700 mr-2 btn-toggle-tx" style="color:${t.status?'#ff2c2c':'#008f39'}" data-id="${t.id}">${t.status?'⟳':'✓ Pagar'}</button>
         <button class="px-2 py-1 rounded bg-slate-100 dark:bg-slate-700 mr-2 btn-edit-tx" data-id="${t.id}">✏️</button>
         <button class="px-2 py-1 rounded bg-red-100 dark:bg-red-900/40 text-red-600 btn-del-tx" data-id="${t.id}">🗑️</button>
       </td>
@@ -823,14 +844,18 @@ function renderTxTable(items) {
   qsa('.tx-select').forEach(cb => cb.addEventListener('change', updateMassbar));
   qsa('.btn-edit-tx').forEach(btn => {
     const id = btn.dataset.id;
-    const tx = items.find(it => it.id === id);
-    btn.addEventListener('click', () => openTxModal(tx));
+    const tx = items.find(it => String(it.id) === String(id));
+    btn.addEventListener('click', () => {
+      if (!tx) { alert('Transação não encontrada para edição.'); return; }
+      openTxModal(tx);
+    });
   });
   qsa('.btn-toggle-tx').forEach(btn => {
     const id = btn.dataset.id;
-    const tx = items.find(it => it.id === id);
+    const tx = items.find(it => String(it.id) === String(id));
     btn.addEventListener('click', async () => {
-      const res = await apiTransactions('update', { id, status: !tx.status });
+      if (!tx) { alert('Transação não encontrada ao atualizar status.'); return; }
+      const res = await apiTransactions('update', { id, status: !Boolean(tx.status) });
       if (res.success) {
         await refreshTransactions();
       } else {
@@ -894,7 +919,7 @@ function bindTxModal() {
   feeSel.addEventListener('change', updateNetAmount);
   amountInput.addEventListener('input', updateNetAmount);
   function updateNetAmount() {
-    const v = parseFloat((amountInput.value || '0').replace(/[^0-9,.-]/g,'' ).replace(',', '.')) || 0;
+    const v = parseBRLToFloat(amountInput.value || '0');
     const fee = parseFloat(feeSel.value || '0') || 0;
     const net = v * (1 - fee);
     qs('#tx-net').textContent = `Valor líquido: ${formatBRL(net)}`;
@@ -918,7 +943,7 @@ function bindTxModal() {
       company_id: state.currentCompanyId,
       type: fd.get('type'),
       description: fd.get('description'),
-      amount: parseFloat(String(fd.get('amount')).replace(/[^0-9,.-]/g,'' ).replace(',', '.')),
+      amount: parseBRLToFloat(fd.get('amount')),
       date: parseBRToISO(fd.get('date')),
       account_id: fd.get('account_id'),
       category_id: fd.get('category_id'),
@@ -958,11 +983,14 @@ function openTxModal(arg) {
   // subcategorias conforme categoria
   qs('#tx-category').dispatchEvent(new Event('change'));
   const dateInput = qs('#tx-date') || qs('input[name="date"]');
+  const statusCheckbox = formEl.querySelector('input[name="status"]');
+  
   if (isEdit) {
     formEl.dataset.mode = 'edit';
     formEl.dataset.id = arg.id;
     qs('input[name="description"]').value = arg.description || '';
-    qs('input[name="amount"]').value = String(arg.amount || '');
+    // Prefill com máscara de moeda para melhor UX
+    qs('input[name="amount"]').value = formatBRL(arg.amount || 0);
     dateInput.value = formatISOToBR(arg.date || '');
     qs('#tx-account').value = arg.account_id || '';
     qs('#tx-category').value = arg.category_id || '';
@@ -972,7 +1000,9 @@ function openTxModal(arg) {
     qs('#tx-payment').value = arg.payment_method_id || '';
     qs('#tx-payment').dispatchEvent(new Event('change'));
     qs('#tx-fee').value = arg.fee_percent || '0';
-    qs('#tx-status').checked = !!arg.status;
+    if (statusCheckbox) {
+      statusCheckbox.checked = !!arg.status;
+    }
   } else {
     formEl.dataset.mode = 'create';
     formEl.dataset.id = '';
@@ -981,6 +1011,9 @@ function openTxModal(arg) {
     const today = new Date().toISOString().slice(0,10);
     dateInput.value = formatISOToBR(today);
     qs('#tx-payment').dispatchEvent(new Event('change'));
+    if (statusCheckbox) {
+      statusCheckbox.checked = false;
+    }
   }
   qs('#tx-modal').classList.remove('hidden');
 }
@@ -1253,7 +1286,27 @@ function initAccounts() {
   yearSel.innerHTML = years.map(y=>`<option value="${y}">${y}</option>`).join('');
   monthSel.innerHTML = ['Todos','01','02','03','04','05','06','07','08','09','10','11','12']
     .map((m,i)=>`<option value="${i===0?'todos':m}">${i===0?'Todos':m}</option>`).join('');
+  // Defaults: ano atual e mês "Todos"
+  yearSel.value = String(now.getFullYear());
+  monthSel.value = 'todos';
   ['acc-select','acc-year','acc-month'].forEach(id => qs('#'+id).addEventListener('change', refreshAccounts));
+  // Paginação de contas
+  const sizeSel = qs('#acc-page-size');
+  const btnPrev = qs('#acc-page-prev');
+  const btnNext = qs('#acc-page-next');
+  if (sizeSel) {
+    sizeSel.value = String(state.accPageSize);
+    sizeSel.addEventListener('change', () => {
+      state.accPageSize = parseInt(sizeSel.value || '10', 10);
+      state.accPage = 1;
+      renderAccountStatement(state.accItems, state.accOpening);
+    });
+  }
+  if (btnPrev) btnPrev.addEventListener('click', () => { if (state.accPage > 1) { state.accPage--; renderAccountStatement(state.accItems, state.accOpening); } });
+  if (btnNext) btnNext.addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil((state.accItems||[]).length / state.accPageSize));
+    if (state.accPage < totalPages) { state.accPage++; renderAccountStatement(state.accItems, state.accOpening); }
+  });
   refreshAccounts();
 }
 
@@ -1271,12 +1324,15 @@ async function refreshAccounts() {
   const data = await apiTransactions('list', params);
   const all = (data.items||[]).filter(t=> t.account_id === accId);
   // Initial balance at start of selected period
-  let initial = 0;
+  const acc = (state.catalogs?.accounts||[]).find(a => a.id === accId);
+  const initialBalance = parseFloat(acc?.initial_balance || 0) || 0;
+  let initial = initialBalance;
   if (month !== 'todos') {
     const periodStart = `${year}-${month}-01`;
-    initial = all
+    const priorMovements = all
       .filter(t=> t.date < periodStart)
       .reduce((sum,t)=> sum + (t.type==='income' ? (t.amount - (t.fee_percent ? t.amount*t.fee_percent : 0)) : -t.amount), 0);
+    initial += priorMovements;
   }
   // Movements within selected period
   const monthItems = all.filter(t=> {
@@ -1290,14 +1346,31 @@ async function refreshAccounts() {
   }
   qs('#acc-opening').textContent = formatBRL(initial);
   qs('#acc-closing').textContent = formatBRL(closing);
-  renderAccountStatement(monthItems, initial);
+  state.accItems = monthItems;
+  state.accOpening = initial;
+  state.accPage = 1;
+  renderAccountStatement(state.accItems, state.accOpening);
 }
 
 function renderAccountStatement(items, opening) {
   const tbody = qs('#acc-table-body');
+  const pageSize = state.accPageSize || 10;
+  const total = (items||[]).length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (state.accPage > totalPages) state.accPage = totalPages;
+  const start = (state.accPage - 1) * pageSize;
+  const end = start + pageSize;
+  const slice = (items||[]).slice(start, end);
+  // Running starts from opening plus prior movements before current page
   let running = opening;
+  for (let i = 0; i < start; i++) {
+    const t = items[i];
+    const fee = (t.fee_percent ? t.amount*t.fee_percent : 0);
+    const net = t.type==='income' ? (t.amount - fee) : -t.amount;
+    running += net;
+  }
   const catMap = Object.fromEntries((state.catalogs?.categories||[]).map(c=> [c.id, c.name]));
-  tbody.innerHTML = items.map(t=> {
+  tbody.innerHTML = slice.map(t=> {
     const fee = (t.fee_percent ? t.amount*t.fee_percent : 0);
     const net = t.type==='income' ? (t.amount - fee) : -t.amount;
     running += net;
@@ -1305,7 +1378,7 @@ function renderAccountStatement(items, opening) {
     const valClass = net >= 0 ? 'text-income' : 'text-expense';
     return `
       <tr class="border-b border-slate-100 dark:border-slate-700">
-        <td class="py-2 pr-3">${t.date}</td>
+        <td class="py-2 pr-3">${formatISOToBR(t.date)}</td>
         <td class="py-2 pr-3">${t.description}</td>
         <td class="py-2 pr-3">${catMap[t.category_id]||'—'}</td>
         <td class="py-2 pr-3">${typeLabel}</td>
@@ -1313,6 +1386,19 @@ function renderAccountStatement(items, opening) {
         <td class="py-2 pr-3">${formatBRL(running)}</td>
       </tr>`;
   }).join('');
+  // Atualiza paginação UI
+  const infoEl = qs('#acc-page-info');
+  const prevEl = qs('#acc-page-prev');
+  const nextEl = qs('#acc-page-next');
+  const counterEl = qs('#acc-counter');
+  if (infoEl) infoEl.textContent = `Página ${Math.min(state.accPage, totalPages)} de ${totalPages}`;
+  if (prevEl) prevEl.disabled = state.accPage <= 1;
+  if (nextEl) nextEl.disabled = state.accPage >= totalPages;
+  if (counterEl) {
+    const from = total === 0 ? 0 : start + 1;
+    const to = Math.min(end, total);
+    counterEl.textContent = `Exibindo ${from}–${to} de ${total}`;
+  }
 }
 
 // --- Catalogs screen ---

@@ -66,7 +66,7 @@ try {
         $subMap = [];
         foreach ($subs->fetchAll() as $s) { $subMap[$s['category_id']][] = ['id' => $s['id'], 'name' => $s['name']]; }
         foreach ($categories as &$c) { $c['subcategories'] = $subMap[$c['id']] ?? []; }
-        $accs = $pdo->prepare('SELECT id,name FROM accounts WHERE user_id=:uid ORDER BY name');
+        $accs = $pdo->prepare('SELECT id,name,initial_balance,is_default FROM accounts WHERE user_id=:uid ORDER BY name');
         $accs->execute([':uid' => $userId]);
         $ccs = $pdo->prepare('SELECT id,name FROM cost_centers WHERE user_id=:uid ORDER BY name');
         $ccs->execute([':uid' => $userId]);

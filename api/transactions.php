@@ -14,10 +14,34 @@ $userId = $_SESSION['user_id'];
 $method = $_SERVER['REQUEST_METHOD'];
 $input = json_decode(file_get_contents('php://input'), true) ?? [];
 
+// Normaliza valores diversos (string, número, null) para booleano rigoroso
+function normalize_bool_param($v) {
+    if (is_bool($v)) return $v;
+    if ($v === null) return false;
+    if (is_int($v)) return $v !== 0;
+    if (is_string($v)) {
+        $s = strtolower(trim($v));
+        if ($s === '' || $s === '0' || $s === 'false' || $s === 'f' || $s === 'no' || $s === 'off' || $s === 'n') return false;
+        if ($s === '1' || $s === 'true' || $s === 't' || $s === 'yes' || $s === 'on' || $s === 'y') return true;
+        return false;
+    }
+    return (bool)$v;
+}
+
 try {
     $pdo = db();
     if (!$pdo) {
         throw new Exception('A conexão com o banco de dados não pôde ser estabelecida.');
+    }
+
+    // Validação de campos obrigatórios para POST
+    if ($method === 'POST') {
+        $requiredFields = ['description', 'amount', 'date', 'type'];
+        foreach ($requiredFields as $field) {
+            if (!isset($input[$field]) || $input[$field] === '') {
+                throw new Exception("Campo obrigatório ausente: $field");
+            }
+        }
     }
 
     // =========================
@@ -214,7 +238,8 @@ try {
             ':desc' => $input['description'],
             ':amount' => $amount,
             ':date' => $input['date'],
-            ':paid' => $input['status'] ?? false,
+            // Garante valor válido para coluna booleana (0/1) mesmo com string vazia/ausente
+            ':paid' => isset($input['status']) ? (normalize_bool_param($input['status']) ? 1 : 0) : 0,
             ':type' => $type,
             ':acc' => $input['account_id'] ?? null,
             ':cat' => $input['category_id'] ?? null,
@@ -244,7 +269,7 @@ try {
         if (array_key_exists('description', $input)) { $fields[] = 'description = :desc'; $params[':desc'] = $input['description']; }
         if (array_key_exists('amount', $input)) { $fields[] = 'amount = :amount'; $params[':amount'] = $input['amount']; }
         if (array_key_exists('date', $input)) { $fields[] = 'transaction_date = :date'; $params[':date'] = $input['date']; }
-        if (array_key_exists('status', $input)) { $fields[] = 'paid = :paid'; $params[':paid'] = !!$input['status']; }
+        if (array_key_exists('status', $input)) { $fields[] = 'paid = :paid'; $params[':paid'] = normalize_bool_param($input['status']) ? 1 : 0; }
         if (array_key_exists('account_id', $input)) { $fields[] = 'account_id = :acc'; $params[':acc'] = $input['account_id'] ?? null; }
         if (array_key_exists('category_id', $input)) { $fields[] = 'category_id = :cat'; $params[':cat'] = $input['category_id'] ?? null; }
         if (array_key_exists('subcategory_id', $input)) { $fields[] = 'subcategory_id = :sub'; $params[':sub'] = $input['subcategory_id'] ?? null; }
