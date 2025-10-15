@@ -9,6 +9,12 @@ const state = {
   route: 'dashboard',
   catalogs: null,
   transactions: [],
+  // Paginação de Transações
+  txPage: 1,
+  txPageSize: 50,
+  // Guards to avoid duplicate event bindings on Catalogs screen
+  catalogFormsBound: false,
+  catalogDefaultBound: false,
 };
 
 const qs = (sel) => document.querySelector(sel);
@@ -16,6 +22,51 @@ const qsa = (sel) => Array.from(document.querySelectorAll(sel));
 
 function formatBRL(value) {
   return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value || 0);
+}
+
+function parseBRLToFloat(str) {
+  if (typeof str === 'number') return str;
+  if (!str) return 0;
+  // Normalize Brazilian currency string like "1.234,56" to float
+  const normalized = String(str).replace(/[^0-9,.-]/g, '').replace(/\./g, '').replace(',', '.');
+  const num = parseFloat(normalized);
+  return isNaN(num) ? 0 : num;
+}
+
+// Currency input mask: formats as BRL while typing (e.g., R$ 1.234,56)
+function attachCurrencyMask(input) {
+  if (!input) return;
+  const format = () => {
+    const digits = String(input.value || '').replace(/\D/g, '');
+    const num = parseInt(digits || '0', 10);
+    const value = (num / 100);
+    input.value = new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(value);
+  };
+  input.addEventListener('input', format);
+  input.addEventListener('blur', () => { if (!input.value) input.value = 'R$\u00A00,00'; });
+}
+
+// Date helpers for dd/mm/yyyy UI and ISO storage
+function formatISOToBR(iso) {
+  if (!iso) return '';
+  const [y,m,d] = String(iso).split('-');
+  if (!y || !m || !d) return '';
+  return `${d}/${m}/${y}`;
+}
+function parseBRToISO(br) {
+  if (!br) return '';
+  const m = String(br).match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+  if (!m) return br; // if already ISO or invalid, pass through
+  return `${m[3]}-${m[2]}-${m[1]}`;
+}
+function attachDateMask(input) {
+  if (!input) return;
+  input.addEventListener('input', () => {
+    let v = String(input.value || '').replace(/\D/g, '').slice(0, 8);
+    if (v.length >= 5) input.value = `${v.slice(0,2)}/${v.slice(2,4)}/${v.slice(4)}`;
+    else if (v.length >= 3) input.value = `${v.slice(0,2)}/${v.slice(2)}`;
+    else input.value = v;
+  });
 }
 
 function setTheme(theme) {
@@ -40,8 +91,12 @@ function toggleTheme() {
 }
 
 function show(viewId) {
-  ['#auth-view', '#onboarding-view', '#app-view'].forEach((id) => qs(id).classList.add('hidden'));
-  qs(viewId).classList.remove('hidden');
+  ['#loading-view', '#auth-view', '#onboarding-view', '#app-view'].forEach((id) => {
+    const el = qs(id);
+    if (el) el.classList.add('hidden');
+  });
+  const target = qs(viewId);
+  if (target) target.classList.remove('hidden');
 }
 
 function setRoute(route) {
@@ -108,7 +163,9 @@ async function apiCompanies(action, payload) {
     headers: { 'Content-Type': 'application/json' },
     body: action === 'list' ? null : JSON.stringify(payload || {}),
   });
-  return res.json();
+  const text = await res.text();
+  try { return JSON.parse(text); }
+  catch(e) { console.error('Companies API resposta não-JSON:', text); return { success: false, message: 'Resposta inválida da API de empresas.' }; }
 }
 
 async function apiDashboard(params) {
@@ -118,7 +175,9 @@ async function apiDashboard(params) {
   const url = new URL('/api/transactions.php', window.location.origin);
   Object.entries(params || {}).forEach(([k,v])=> url.searchParams.set(k,v));
   const res = await fetch(url.toString());
-  return res.json();
+  const text = await res.text();
+  try { return JSON.parse(text); }
+  catch(e) { console.error('Dashboard API resposta não-JSON:', text); return { success: false, message: 'Resposta inválida da API do dashboard.' }; }
 }
 
 async function apiCatalogs() {
@@ -147,7 +206,9 @@ async function apiCatalogs() {
     return { success: true, catalogs };
   }
   const res = await fetch('/api/catalogs.php');
-  return res.json();
+  const text = await res.text();
+  try { return JSON.parse(text); }
+  catch(e) { console.error('Catalogs API resposta não-JSON:', text); return { success: false, message: 'Resposta inválida da API de catálogos.' }; }
 }
 
 // Catalogs CRUD (DEV simulado, produção via API)
@@ -159,6 +220,16 @@ async function apiCatalogsCRUD(entity, action, payload) {
       if (entity === 'fees') return { success: true, items: (c.payment_methods||[]).flatMap(pm=> (pm.fees||[]).map(f=> ({...f, payment_method_id: pm.id, payment_method_name: pm.name}))) };
       if (entity === 'subcategories') return { success: true, items: (c.categories||[]).flatMap(cat=> (cat.subcategories||[]).map(sub=> ({...sub, category_id: cat.id, category_name: cat.name}))) };
       return { success: true, items: c[entity] || [] };
+    }
+    if (action === 'update') {
+      if (entity === 'categories') { const it = (c.categories||[]).find(x=> x.id === payload.id); if (it && payload.name!=null) it.name = payload.name; return { success: true }; }
+      if (entity === 'subcategories') {
+        for (const cat of c.categories||[]) { const sub = (cat.subcategories||[]).find(s=> s.id === payload.id); if (sub && payload.name!=null) { sub.name = payload.name; return { success: true }; } }
+        return { success: true };
+      }
+      if (entity === 'cost_centers') { const it = (c.cost_centers||[]).find(x=> x.id === payload.id); if (it && payload.name!=null) it.name = payload.name; return { success: true }; }
+      if (entity === 'accounts') { const it = (c.accounts||[]).find(x=> x.id === payload.id); if (it) { if (payload.name!=null) it.name = payload.name; if (payload.initial_balance!=null) it.initial_balance = payload.initial_balance; } return { success: true }; }
+      if (entity === 'payment_methods') { const it = (c.payment_methods||[]).find(x=> x.id === payload.id); if (it && payload.name!=null) it.name = payload.name; return { success: true }; }
     }
     if (action === 'create') {
       if (entity === 'categories') { const item = { id: genId('cat'), name: payload.name, type: payload.type, subcategories: [] }; c.categories.push(item); return { success: true, item }; }
@@ -190,13 +261,28 @@ async function apiCatalogsCRUD(entity, action, payload) {
 async function apiTransactions(action, payloadOrParams) {
   if (DEV) {
     if (action === 'list') {
-      const { company_id, status, year, month, cost_center } = payloadOrParams || {};
-      const items = state.transactions.filter(t => (
-        (!company_id || t.company_id === company_id) &&
-        (status !== 'realizado' || t.status === true) &&
-        (!cost_center || cost_center === 'todos' || t.cost_center_id === cost_center) &&
-        (!year || (month === 'todos' ? t.date.startsWith(String(year)) : t.date.startsWith(`${year}-${month}`)))
-      ));
+      const { company_id, status, type, year, month, cost_center, category_id } = payloadOrParams || {};
+      const items = state.transactions.filter(t => {
+        // Empresa
+        const okCompany = (!company_id || t.company_id === company_id);
+        // Status: realizado -> true, projetado -> false, todas -> sem filtro
+        const okStatus = (!status || status === 'todas')
+          ? true
+          : (status === 'realizado' ? t.status === true : (status === 'projetado' ? t.status === false : true));
+        // Tipo: income|expense quando informado
+        const okType = (!type || t.type === type);
+        // Centro de custo
+        const okCC = (!cost_center || cost_center === 'todos' || t.cost_center_id === cost_center);
+        // Categoria
+        const okCat = (!category_id || category_id === 'todos' || t.category_id === category_id);
+        // Ano/Mês
+        const okDate = (!year)
+          ? true
+          : (month === 'todos'
+              ? (t.date || '').startsWith(String(year))
+              : (t.date || '').startsWith(`${year}-${month}`));
+        return okCompany && okStatus && okType && okCC && okCat && okDate;
+      });
       return { success: true, items };
     }
     if (action === 'create') {
@@ -222,27 +308,35 @@ async function apiTransactions(action, payloadOrParams) {
     return { success: false };
   }
   if (action === 'list') {
-  const url = new URL('/api/transactions.php', window.location.origin);
+    const url = new URL('/api/transactions.php', window.location.origin);
     Object.entries(payloadOrParams || {}).forEach(([k,v])=> url.searchParams.set(k,v));
     const res = await fetch(url.toString());
-    return res.json();
+    const text = await res.text();
+    try { return JSON.parse(text); }
+    catch(e) { console.error('Transactions list resposta não-JSON:', text); return { success: false, message: 'Resposta inválida da API de transações (list).' }; }
   }
   if (action === 'create') {
   const res = await fetch('/api/transactions.php', {
       method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payloadOrParams)
     });
-    return res.json();
+    const text = await res.text();
+    try { return JSON.parse(text); }
+    catch(e) { console.error('Transactions create resposta não-JSON:', text); return { success: false, message: 'Resposta inválida da API de transações (create).' }; }
   }
   if (action === 'update') {
   const res = await fetch('/api/transactions.php', {
       method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payloadOrParams)
     });
-    return res.json();
+    const text = await res.text();
+    try { return JSON.parse(text); }
+    catch(e) { console.error('Transactions update resposta não-JSON:', text); return { success: false, message: 'Resposta inválida da API de transações (update).' }; }
   }
   if (action === 'delete') {
     const id = payloadOrParams?.id;
-  const res = await fetch(`/api/transactions.php?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
-    return res.json();
+    const res = await fetch(`/api/transactions.php?id=${encodeURIComponent(id)}`, { method: 'DELETE' });
+    const text = await res.text();
+    try { return JSON.parse(text); }
+    catch(e) { console.error('Transactions delete resposta não-JSON:', text); return { success: false, message: 'Resposta inválida da API de transações (delete).' }; }
   }
 }
 
@@ -281,7 +375,9 @@ function computeClientDashboard(params) {
     const map = t.type==='expense' ? expCatsMap : incCatsMap;
     map[t.category_id] = (map[t.category_id]||0) + t.amount;
   }
-  const toArr = (m) => ({ labels: Object.keys(m), values: Object.values(m) });
+  // labels em DEV devem ser os NOMES das categorias para compatibilidade visual
+  const catMap = Object.fromEntries((state.catalogs?.categories||[]).map(c=> [c.id, c.name]));
+  const toArr = (m) => ({ labels: Object.keys(m).map(id=> id==='—' ? 'Sem Categoria' : (catMap[id]||id)), values: Object.values(m) });
   return {
     success: true,
     items,
@@ -383,7 +479,14 @@ function populateCompanySelect() {
   sel.innerHTML = state.companies.map(c => `<option value="${c.id}" ${c.id===state.currentCompanyId?'selected':''}>${c.name}</option>`).join('');
   sel.addEventListener('change', async () => {
     state.currentCompanyId = sel.value;
-    await refreshDashboard();
+    // Atualiza a view atual conforme a rota ativa
+    if (state.route === 'dashboard') {
+      await refreshDashboard();
+    } else if (state.route === 'transactions') {
+      await refreshTransactions();
+    } else if (state.route === 'accounts') {
+      await refreshAccounts();
+    }
   });
 }
 
@@ -438,12 +541,16 @@ function initHeader() {
   const sidebar = qs('#sidebar');
   const overlay = qs('#sidebar-overlay');
   qs('#btn-menu').addEventListener('click', () => {
+    // Em mobile o elemento possui 'hidden'; remova antes de abrir
+    sidebar.classList.remove('hidden');
     sidebar.classList.add('open');
     overlay.classList.remove('hidden');
   });
   overlay.addEventListener('click', () => {
     sidebar.classList.remove('open');
     overlay.classList.add('hidden');
+    // Opcionalmente volte a esconder após fechar
+    sidebar.classList.add('hidden');
   });
   qsa('.nav-link').forEach((a) => a.addEventListener('click', (e) => {
     const hash = a.getAttribute('href').replace('#', '');
@@ -452,6 +559,7 @@ function initHeader() {
     if (overlay && !overlay.classList.contains('hidden')) {
       sidebar.classList.remove('open');
       overlay.classList.add('hidden');
+      sidebar.classList.add('hidden');
     }
   }));
 }
@@ -467,6 +575,9 @@ function initDashboard() {
   const years = [now.getFullYear()-1, now.getFullYear(), now.getFullYear()+1];
   yearSel.innerHTML = years.map(y=>`<option value="${y}">${y}</option>`).join('');
   monthSel.innerHTML = ['Todos','01','02','03','04','05','06','07','08','09','10','11','12'].map((m,i)=>`<option value="${i===0?'todos':m}">${i===0?'Todos':m}</option>`).join('');
+  // Seleciona ano atual e mês "Todos" por padrão
+  yearSel.value = String(now.getFullYear());
+  monthSel.value = 'todos';
   ['filter-status','filter-cc','filter-year','filter-month'].forEach(id => {
     qs('#'+id).addEventListener('change', refreshDashboard);
   });
@@ -483,7 +594,29 @@ async function refreshDashboard() {
     year: qs('#filter-year').value,
     month: qs('#filter-month').value,
   };
-  const data = DEV ? await apiDashboard(params) : await apiTransactions('list', params);
+  let data;
+  try {
+    data = DEV ? await apiDashboard(params) : await apiTransactions('list', params);
+  } catch (e) {
+    console.error('Erro no dashboard:', e);
+  }
+  if (!data || data.success === false || !data.summary) {
+    // Evita TypeError e informa ao usuário sem quebrar a UI
+    const msg = (data && data.message) ? data.message : 'A conexão com o banco de dados não pôde ser estabelecida.';
+    alert(msg);
+    const emptySummary = { income: 0, expense: 0, profit: 0, margin: 0 };
+    const emptyTrend = { labels: [], income: [], expense: [] };
+    const emptyCats = { expense: { labels: [], values: [] }, income: { labels: [], values: [] } };
+    const emptyLast = [];
+    qs('#card-income').textContent = formatBRL(0);
+    qs('#card-expense').textContent = formatBRL(0);
+    qs('#card-profit').textContent = formatBRL(0);
+    qs('#card-margin').textContent = '0%';
+    renderLineChart(emptyTrend);
+    renderPieCharts(emptyCats);
+    renderLastTransactions(emptyLast);
+    return;
+  }
   qs('#card-income').textContent = formatBRL(data.summary.income);
   qs('#card-expense').textContent = formatBRL(data.summary.expense);
   qs('#card-profit').textContent = formatBRL(data.summary.profit);
@@ -499,6 +632,11 @@ function renderLineChart(trend) {
   const labels = trend.labels;
   const income = trend.income;
   const expense = trend.expense;
+  // Atualiza título do gráfico com ano/mês selecionados
+  const year = qs('#filter-year')?.value || '';
+  const month = qs('#filter-month')?.value || 'todos';
+  const yearEl = qs('#chart-year');
+  if (yearEl) { yearEl.textContent = year || '—'; }
   if (lineChart) lineChart.destroy();
   const isDark = document.documentElement.classList.contains('dark');
   const gridColor = isDark ? 'rgba(226,232,240,0.15)' : 'rgba(100,116,139,0.2)';
@@ -529,11 +667,23 @@ function renderPieCharts(categories) {
   const ictx = qs('#pieIncome');
   if (pieExpense) pieExpense.destroy();
   if (pieIncome) pieIncome.destroy();
+  // Paleta de cores distinta e estável por rótulo
+  const normalize = (s) => String(s||'').toLowerCase().trim();
+  const colorForLabel = (label, baseHue) => {
+    const str = normalize(label);
+    let hash = 0; for (let i=0;i<str.length;i++) { hash = (hash*31 + str.charCodeAt(i)) & 0xffff; }
+    const hue = (baseHue + (hash % 48) * 5) % 360; // espalha no espectro
+    const sat = 55 + (hash % 35); // 55–90
+    const light = 45 + (hash % 25); // 45–70
+    return `hsl(${hue}, ${sat}%, ${light}%)`;
+  };
+  const expColors = (categories.expense.labels||[]).map(l => colorForLabel(l, 8));
+  const incColors = (categories.income.labels||[]).map(l => colorForLabel(l, 120));
   pieExpense = new Chart(ectx, {
     type: 'doughnut',
     data: {
       labels: categories.expense.labels,
-      datasets: [{ data: categories.expense.values, backgroundColor: ['#e74c3c','#c0392b','#ff7675','#d63031'] }]
+      datasets: [{ data: categories.expense.values, backgroundColor: expColors }]
     },
     options: { plugins: { legend: { labels: { color: document.documentElement.classList.contains('dark') ? '#e2e8f0' : '#334155' } } } }
   });
@@ -541,7 +691,7 @@ function renderPieCharts(categories) {
     type: 'doughnut',
     data: {
       labels: categories.income.labels,
-      datasets: [{ data: categories.income.values, backgroundColor: ['#2ecc71','#27ae60','#55efc4','#00b894'] }]
+      datasets: [{ data: categories.income.values, backgroundColor: incColors }]
     },
     options: { plugins: { legend: { labels: { color: document.documentElement.classList.contains('dark') ? '#e2e8f0' : '#334155' } } } }
   });
@@ -564,14 +714,34 @@ function initTransactions() {
   const now = new Date();
   const years = [now.getFullYear()-1, now.getFullYear(), now.getFullYear()+1];
   if (yearSel && monthSel) {
-    yearSel.innerHTML = years.map(y=>`<option value="${y}">${y}</option>`).join('');
+    yearSel.innerHTML = ['<option value="todos">Todos</option>'].concat(years.map(y=>`<option value="${y}">${y}</option>`)).join('');
     monthSel.innerHTML = ['Todos','01','02','03','04','05','06','07','08','09','10','11','12'].map((m,i)=>`<option value="${i===0?'todos':m}">${i===0?'Todos':m}</option>`).join('');
+    // Seleciona "Todos" e mês "Todos" por padrão (mostrar todas as transações)
+    yearSel.value = 'todos';
+    monthSel.value = 'todos';
   }
   // CC
   populateFiltersFromCatalogs();
   // Listeners
   ['tx-filter-status','tx-filter-cc','tx-filter-category','tx-filter-year','tx-filter-month'].forEach(id => {
     const el = qs('#'+id); if (el) el.addEventListener('change', refreshTransactions);
+  });
+  // Paginação
+  const sizeSel = qs('#tx-page-size');
+  const btnPrev = qs('#tx-page-prev');
+  const btnNext = qs('#tx-page-next');
+  if (sizeSel) {
+    sizeSel.value = String(state.txPageSize);
+    sizeSel.addEventListener('change', () => {
+      state.txPageSize = parseInt(sizeSel.value || '50', 10);
+      state.txPage = 1;
+      renderTxTable(state.transactions);
+    });
+  }
+  if (btnPrev) btnPrev.addEventListener('click', () => { if (state.txPage > 1) { state.txPage--; renderTxTable(state.transactions); } });
+  if (btnNext) btnNext.addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil((state.transactions||[]).length / state.txPageSize));
+    if (state.txPage < totalPages) { state.txPage++; renderTxTable(state.transactions); }
   });
   // Import
   const btnImport = qs('#btn-import');
@@ -582,17 +752,23 @@ function initTransactions() {
 }
 
 async function refreshTransactions() {
+  const yearVal = qs('#tx-filter-year').value;
+  const monthVal = qs('#tx-filter-month').value;
   const params = {
     company_id: state.currentCompanyId,
     status: ['income','expense'].includes(qs('#tx-filter-status').value) ? 'todas' : qs('#tx-filter-status').value,
     type: ['income','expense'].includes(qs('#tx-filter-status').value) ? qs('#tx-filter-status').value : null,
     cost_center: qs('#tx-filter-cc').value,
     category_id: qs('#tx-filter-category').value,
-    year: qs('#tx-filter-year').value,
-    month: qs('#tx-filter-month').value,
   };
+  // Envia ano/mês somente se ano != 'todos'
+  if (yearVal && yearVal !== 'todos') {
+    params.year = yearVal;
+    params.month = monthVal;
+  }
   const data = await apiTransactions('list', params);
   state.transactions = data.items || [];
+  state.txPage = 1; // volta para primeira página ao atualizar lista
   renderTxTable(state.transactions);
 }
 
@@ -600,14 +776,23 @@ function renderTxTable(items) {
   const tbody = qs('#tx-table-body');
   const cats = state.catalogs?.categories || [];
   const catName = (id) => (cats.find(c=> c.id===id)?.name || '-');
-  tbody.innerHTML = (items||[]).map(t => `
+  // Paginação
+  const pageSize = state.txPageSize || 50;
+  const total = (items||[]).length;
+  const totalPages = Math.max(1, Math.ceil(total / pageSize));
+  if (state.txPage > totalPages) state.txPage = totalPages;
+  const start = (state.txPage - 1) * pageSize;
+  const end = start + pageSize;
+  const slice = (items||[]).slice(start, end);
+
+  tbody.innerHTML = slice.map(t => `
     <tr class="border-b border-slate-200 dark:border-slate-700">
       <td class="py-2 pr-3"><input type="checkbox" class="tx-select" data-id="${t.id}" /></td>
       <td class="py-2 pr-3">${t.date}</td>
       <td class="py-2 pr-3">${t.description}</td>
       <td class="py-2 pr-3">${catName(t.category_id)}</td>
       <td class="py-2 pr-3 ${t.type==='income'?'text-income':'text-expense'}">${formatBRL(t.amount)}</td>
-      <td class="py-2 pr-3"><span class="pill ${t.status ? 'pill-green' : 'pill-gray'}">${t.status?'Realizada':'Projetada'}</span></td>
+      <td class="py-2 pr-3"><span class="pill ${t.status ? 'pill-green' : 'pill-gray'}">${t.status?'Concluído':'Pendente'}</span></td>
       <td class="py-2 pr-3">
         <button title="${t.status?'Estornar':'Quitar'}" class="px-2 py-1 rounded bg-slate-100 dark:bg-slate-700 mr-2 btn-toggle-tx" data-id="${t.id}">${t.status?'⟳':'✓'}</button>
         <button class="px-2 py-1 rounded bg-slate-100 dark:bg-slate-700 mr-2 btn-edit-tx" data-id="${t.id}">✏️</button>
@@ -615,6 +800,13 @@ function renderTxTable(items) {
       </td>
     </tr>
   `).join('');
+  // Atualiza info de paginação
+  const infoEl = qs('#tx-page-info');
+  const prevEl = qs('#tx-page-prev');
+  const nextEl = qs('#tx-page-next');
+  if (infoEl) infoEl.textContent = `Página ${Math.min(state.txPage, totalPages)} de ${totalPages}`;
+  if (prevEl) prevEl.disabled = state.txPage <= 1;
+  if (nextEl) nextEl.disabled = state.txPage >= totalPages;
   // Bind ações
   const massbar = qs('#tx-massbar');
   const selCount = qs('#tx-selected-count');
@@ -670,6 +862,7 @@ function renderTxTable(items) {
 }
 
 // FAB and Modal
+
 function bindFab() {
   const fab = qs('#fab');
   const menu = qs('#fab-menu');
@@ -687,6 +880,10 @@ function bindTxModal() {
   const feeWrap = qs('#tx-fee-wrapper');
   const feeSel = qs('#tx-fee');
   const amountInput = qs('input[name="amount"]');
+  const dateInput = qs('#tx-date') || qs('input[name="date"]');
+  // Attach masks
+  attachCurrencyMask(amountInput);
+  attachDateMask(dateInput);
   paymentSel.addEventListener('change', () => {
     const pm = (state.catalogs?.payment_methods||[]).find(p=> p.id===paymentSel.value);
     const fees = pm?.fees||[];
@@ -722,7 +919,7 @@ function bindTxModal() {
       type: fd.get('type'),
       description: fd.get('description'),
       amount: parseFloat(String(fd.get('amount')).replace(/[^0-9,.-]/g,'' ).replace(',', '.')),
-      date: fd.get('date'),
+      date: parseBRToISO(fd.get('date')),
       account_id: fd.get('account_id'),
       category_id: fd.get('category_id'),
       subcategory_id: fd.get('subcategory_id') || null,
@@ -760,12 +957,13 @@ function openTxModal(arg) {
   qs('#tx-category').innerHTML = cats.map(c=> `<option value="${c.id}">${c.name}</option>`).join('');
   // subcategorias conforme categoria
   qs('#tx-category').dispatchEvent(new Event('change'));
+  const dateInput = qs('#tx-date') || qs('input[name="date"]');
   if (isEdit) {
     formEl.dataset.mode = 'edit';
     formEl.dataset.id = arg.id;
     qs('input[name="description"]').value = arg.description || '';
     qs('input[name="amount"]').value = String(arg.amount || '');
-    qs('input[name="date"]').value = arg.date || '';
+    dateInput.value = formatISOToBR(arg.date || '');
     qs('#tx-account').value = arg.account_id || '';
     qs('#tx-category').value = arg.category_id || '';
     qs('#tx-category').dispatchEvent(new Event('change'));
@@ -781,25 +979,66 @@ function openTxModal(arg) {
     formEl.reset();
     qs('#tx-type').value = type;
     const today = new Date().toISOString().slice(0,10);
-    qs('input[name="date"]').value = today;
+    dateInput.value = formatISOToBR(today);
     qs('#tx-payment').dispatchEvent(new Event('change'));
   }
   qs('#tx-modal').classList.remove('hidden');
 }
 
+
+
 // Boot
-function boot() {
-  initTheme();
-  bindAuthUI();
-  bindOnboardingUI();
-  if (DEV) {
-    state.user = { id: 'devuser', name: 'Usuário Dev', email: 'dev@example.com' };
-    state.companies = [{ id: 'cmp_dev', name: 'Empresa Dev' }];
-    state.currentCompanyId = 'cmp_dev';
-    enterApp();
-  } else {
-    show('#auth-view');
-  }
+async function boot() { // Transformada em async
+    initTheme();
+    bindAuthUI();
+    bindOnboardingUI();
+
+    // LÓGICA DE VERIFICAÇÃO DE SESSÃO
+    try {
+      if (DEV) {
+          state.user = { id: 'devuser', name: 'Usuário Dev', email: 'dev@example.com' };
+          state.companies = [{ id: 'cmp_dev', name: 'Empresa Dev' }];
+          state.currentCompanyId = 'cmp_dev';
+          await enterApp();
+      } else {
+          // Tenta encontrar uma sessão ativa no backend
+          const res = await fetch('/api/auth.php?action=check-session');
+          const text = await res.text();
+          let sessionData;
+          try { sessionData = JSON.parse(text); }
+          catch(e) { console.warn('check-session não retornou JSON. Exibindo login.', text); sessionData = { success: false }; }
+
+          if (sessionData && sessionData.success) {
+              // Sessão encontrada! Pula a tela de login
+              state.user = sessionData.user;
+              await postLogin();
+          } else {
+              // Nenhuma sessão, mostra a tela de login
+              show('#auth-view');
+          }
+      }
+    } catch (err) {
+      console.error('Falha no boot de produção:', err);
+      show('#auth-view');
+    }
+    // === MOBILE SIDEBAR TOGGLE ===
+    const toggle = document.querySelector('#menuToggle');
+    const sidebar = document.querySelector('.sidebar');
+    const overlay = document.querySelector('.sidebar-overlay');
+
+    if (toggle && sidebar) {
+      toggle.addEventListener('click', () => {
+        sidebar.classList.toggle('open');
+        if (overlay) overlay.classList.toggle('active');
+      });
+    }
+
+    if (overlay) {
+      overlay.addEventListener('click', () => {
+        sidebar.classList.remove('open');
+        overlay.classList.remove('active');
+      });
+    }
 }
 
 document.addEventListener('DOMContentLoaded', boot);
@@ -831,32 +1070,119 @@ function bindImportModal() {
     const reader = new FileReader();
     reader.onload = () => {
       const text = String(reader.result || '');
-      const lines = text.split(/\r?\n/).filter(l=> l.trim().length>0);
-      validItems = []; const errors = [];
-      const header = lines[0].split(',').map(h=> h.trim());
-      const required = ['Data','Tipo','Descricao','Valor','Categoria'];
-      const hasRequired = required.every(r => header.includes(r));
-      if (!hasRequired) {
-        errors.push(`Cabeçalho inválido. Esperado pelo menos: ${required.join(', ')}`);
+      // Reset UI
+      errorsEl.innerHTML = '';
+      summaryEl.textContent = '';
+      saveBtn.textContent = 'Salvar Transações Válidas';
+      saveBtn.disabled = true;
+      saveBtn.dataset.mode = 'save';
+      validItems = [];
+      // --- CSV parsing robusto com suporte a campos entre aspas e vírgulas internas ---
+      function parseCSV(str) {
+        const rows = [];
+        let row = [];
+        let field = '';
+        let inQuotes = false;
+        for (let i = 0; i < str.length; i++) {
+          const ch = str[i];
+          if (inQuotes) {
+            if (ch === '"') {
+              if (str[i+1] === '"') { field += '"'; i++; } else { inQuotes = false; }
+            } else {
+              field += ch;
+            }
+          } else {
+            if (ch === '"') { inQuotes = true; }
+            else if (ch === ',') { row.push(field.trim()); field = ''; }
+            else if (ch === '\n') { row.push(field.trim()); rows.push(row); row = []; field = ''; }
+            else if (ch === '\r') { /* ignore */ }
+            else { field += ch; }
+          }
+        }
+        // push último campo/linha
+        if (field.length > 0 || row.length > 0) { row.push(field.trim()); rows.push(row); }
+        // remove linhas vazias
+        const filtered = rows.filter(r => r.some(c => String(c).trim().length > 0));
+        return { header: (filtered[0]||[]).map(h => h.trim()), rows: filtered.slice(1) };
       }
-      for (let i=1;i<lines.length;i++) {
-        const raw = lines[i]; if (!raw.trim()) continue;
-        const cols = raw.split(',');
-        const get = (name) => cols[header.indexOf(name)] || '';
+      // Número brasileiro: remove milhares e trata decimal
+      function parseBRNumber(s) {
+        let v = String(s || '').replace(/[^0-9.,-]/g, '').trim();
+        if (!v) return NaN;
+        if (v.includes(',')) {
+          v = v.replace(/\./g, '').replace(',', '.');
+        } else {
+          // sem vírgula: se tiver apenas pontos como milhares (ex: 1.500), remover
+          const parts = v.split('.');
+          if (parts.length > 1 && parts.every(p => /^\d+$/.test(p))) {
+            v = parts.join('');
+          }
+        }
+        return parseFloat(v);
+      }
+      // Data: aceita dd/mm/yyyy e yyyy-mm-dd; normaliza para ISO
+      function normalizeDate(input) {
+        const s = String(input || '').trim();
+        const isoMatch = s.match(/^\d{4}-\d{2}-\d{2}$/);
+        if (isoMatch) return s;
+        const br = s.match(/^([0-3]?\d)\/(0?\d|1[0-2])\/(\d{4})$/);
+        if (br) {
+          const d = parseInt(br[1], 10); const m = parseInt(br[2], 10); const y = parseInt(br[3], 10);
+          const dt = new Date(y, m-1, d);
+          if (dt.getFullYear() === y && dt.getMonth() === m-1 && dt.getDate() === d) {
+            return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`;
+          }
+        }
+        return '';
+      }
+
+      const parsed = parseCSV(text);
+      const header = parsed.header;
+      const rows = parsed.rows;
+      validItems = []; const errors = [];
+      // Normalização de cabeçalhos (remove acentos/espacos/_ e lower)
+      const norm = (s) => String(s||'').normalize('NFD').replace(/[\u0300-\u036f]/g,'').toLowerCase().replace(/[\s_]/g,'');
+      const headerNorm = header.map(h=> norm(h));
+      const idxOf = (aliases) => {
+        const arr = Array.isArray(aliases) ? aliases : [aliases];
+        for (const nm of arr) {
+          const i = headerNorm.indexOf(norm(nm));
+          if (i !== -1) return i;
+        }
+        return -1;
+      };
+      const requiredAliases = {
+        Data: ['Data','Date'],
+        Tipo: ['Tipo','Type'],
+        Descricao: ['Descricao','Descrição','Description'],
+        Valor: ['Valor','Amount'],
+        Categoria: ['Categoria','Category']
+      };
+      const hasRequired = Object.values(requiredAliases).every(al => idxOf(al) !== -1);
+      if (!hasRequired) {
+        errors.push(`Cabeçalho inválido. Campos mínimos: Data, Tipo, Descrição, Valor, Categoria`);
+      }
+      for (let i = 0; i < rows.length; i++) {
+        const cols = rows[i];
+        const get = (nameOrAliases) => {
+          const idx = idxOf(nameOrAliases);
+          return idx >= 0 ? (cols[idx] || '') : '';
+        };
         const rowErrors = [];
-        const date = get('Data');
-        const typeStr = get('Tipo');
-        const description = get('Descricao');
-        const amountStr = get('Valor');
-        const categoryName = get('Categoria');
-        const ccName = get('CentroDeCusto');
-        const accountName = get('Conta');
-        const pmName = get('FormaDePagamento');
-        const feeDesc = get('DescricaoTaxa');
-        const statusStr = get('Status');
+        const dateStr = get(['Data','Date']);
+        const date = normalizeDate(dateStr);
+        const typeStr = get(['Tipo','Type']);
+        const description = get(['Descricao','Descrição','Description']);
+        const amountStr = get(['Valor','Amount']);
+        const amount = parseBRNumber(amountStr);
+        const categoryName = get(['Categoria','Category']);
+        const ccName = get(['CentroDeCusto','Centro de Custo','Centro_Custo','Cost Center','CostCenter','CentroCusto','CC']);
+        const accountName = get(['Conta','Account']);
+        const pmName = get(['FormaDePagamento','Forma de Pagamento','Pagamento','FormaPagamento']);
+        const feeDesc = get(['DescricaoTaxa','Taxa','DescricaoTaxaMaquininha']);
+        const statusStr = get(['Status']);
         const type = typeStr.toLowerCase().includes('rece') ? 'income' : 'expense';
-        const amount = parseFloat(String(amountStr).replace(/[^0-9,.-]/g,'' ).replace(',', '.'));
-        if (!/\d{4}-\d{2}-\d{2}/.test(date)) rowErrors.push('Data inválida (YYYY-MM-DD)');
+        if (!date) rowErrors.push('Data inválida (dd/mm/yyyy ou YYYY-MM-DD)');
         if (!description) rowErrors.push('Descrição vazia');
         if (!(amount>0)) rowErrors.push('Valor inválido');
         const cat = findByName(catList, categoryName);
@@ -868,7 +1194,7 @@ function bindImportModal() {
         const fee_percent = findFeePercent(pmName, feeDesc);
         const status = String(statusStr||'').toLowerCase().includes('real') ? true : false;
         if (rowErrors.length) {
-          errors.push(`Linha ${i+1}: ${rowErrors.join('; ')}`);
+          errors.push(`Linha ${i+2}: ${rowErrors.join('; ')}`); // +2 considerando cabeçalho
         } else {
           validItems.push({
             company_id: state.currentCompanyId,
@@ -885,11 +1211,34 @@ function bindImportModal() {
       }
       summaryEl.textContent = `${validItems.length} transações válidas • ${errors.length} erros`;
       errorsEl.innerHTML = errors.map(e=> `<li>${e}</li>`).join('');
-      saveBtn.disabled = validItems.length === 0;
+      if (errors.length > 0) {
+        // Bloqueia salvamento quando há QUALQUER erro e permite escolher outro arquivo
+        saveBtn.textContent = 'Escolher outro arquivo';
+        saveBtn.dataset.mode = 'retry';
+        saveBtn.disabled = false;
+      } else {
+        saveBtn.textContent = 'Salvar Transações Válidas';
+        saveBtn.dataset.mode = 'save';
+        saveBtn.disabled = validItems.length === 0;
+      }
     };
     reader.readAsText(file);
   });
   saveBtn && saveBtn.addEventListener('click', async () => {
+    if (saveBtn.dataset.mode === 'retry') {
+      // Abrir seleção para novo arquivo
+      fileInput.value = '';
+      validItems = [];
+      errorsEl.innerHTML = '';
+      summaryEl.textContent = '';
+      saveBtn.textContent = 'Salvar Transações Válidas';
+      saveBtn.dataset.mode = 'save';
+      saveBtn.disabled = true;
+      fileInput.click();
+      return;
+    }
+    if (saveBtn.dataset.mode !== 'save' || validItems.length === 0) return;
+    // Somente salva se NÃO houver erros no arquivo inteiro
     for (const item of validItems) { await apiTransactions('create', item); }
     close();
     await refreshTransactions();
@@ -983,17 +1332,15 @@ function initCatalogs() {
     populateCatalogDropdowns();
     refreshCatalogLists();
     bindCatalogForms();
-    bindCatalogDeletes();
+    bindCatalogDeletesAndEdits();
+    bindCatalogDefaultToggle();
   });
 }
 
 function populateCatalogDropdowns() {
   const cats = state.catalogs?.categories || [];
   const subcatSel = qs('#subcat-category');
-  if (subcatSel) subcatSel.innerHTML = cats.map(c => `<option value="${c.id}">${c.name}</option>`).join('');
-  const pms = state.catalogs?.payment_methods || [];
-  const feePaymentSel = qs('#fee-payment');
-  if (feePaymentSel) feePaymentSel.innerHTML = pms.map(pm => `<option value="${pm.id}">${pm.name}</option>`).join('');
+  if (subcatSel) subcatSel.innerHTML = cats.map(c => `<option value="${c.id}">${c.name} (${c.type==='income'?'receita':'despesa'})</option>`).join('');
 }
 
 async function refreshCatalogLists() {
@@ -1005,12 +1352,12 @@ async function refreshCatalogLists() {
     apiCatalogsCRUD('payment_methods','list'),
     apiCatalogsCRUD('fees','list'),
   ]);
-  renderCatalogTable('categories', cats.items || []);
-  renderCatalogTable('subcategories', subs.items || []);
-  renderCatalogTable('cost_centers', ccs.items || []);
-  renderCatalogTable('accounts', accs.items || []);
-  renderCatalogTable('payment_methods', pms.items || []);
-  renderCatalogTable('fees', fees.items || []);
+  renderCategoriesList(cats.items || []);
+  renderSubcategoriesList(subs.items || []);
+  renderCostCentersList(ccs.items || []);
+  renderAccountsList(accs.items || []);
+  renderPaymentMethodsWithFees(pms.items || [], fees.items || []);
+  bindCatalogDeletesAndEdits();
 }
 
 function renderCatalogTable(entity, items) {
@@ -1040,15 +1387,190 @@ function renderCatalogTable(entity, items) {
   });
 }
 
+// === New renderers for redesigned Catalogs UI ===
+function renderCategoriesList(items) {
+  const incUl = qs('#list-categories-income');
+  const expUl = qs('#list-categories-expense');
+  if (!incUl || !expUl) return;
+  incUl.innerHTML = '';
+  expUl.innerHTML = '';
+  items.forEach(item => {
+    const li = document.createElement('li');
+    li.className = 'flex flex-col py-1 border-b border-slate-100 dark:border-slate-700';
+    li.innerHTML = `
+      <div class="view flex items-center justify-between">
+        <span class="item-name">${item.name}</span>
+        <div class="flex items-center gap-2">
+          <button class="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 btn-edit" data-entity="categories" data-id="${item.id}">✏️</button>
+          <button class="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 btn-del" data-entity="categories" data-id="${item.id}">🗑️</button>
+        </div>
+      </div>
+      <div class="edit hidden mt-2 flex items-center gap-2">
+        <input type="text" class="input flex-1 edit-input" value="${item.name}" />
+        <button class="btn-primary btn-save" data-entity="categories" data-id="${item.id}">✓</button>
+        <button class="btn-secondary btn-cancel">×</button>
+      </div>`;
+    (item.type === 'income' ? incUl : expUl).appendChild(li);
+  });
+}
+
+function renderSubcategoriesList(items) {
+  const ul = qs('#list-subcategories');
+  if (!ul) return;
+  ul.innerHTML = '';
+  items.forEach(item => {
+    const li = document.createElement('li');
+    li.className = 'flex flex-col py-1 border-b border-slate-100 dark:border-slate-700';
+    const badgeClass = item.category_type === 'income' ? 'pill pill-green' : 'pill pill-red';
+    const typeLabel = item.category_type === 'income' ? 'receita' : 'despesa';
+    li.innerHTML = `
+      <div class="view flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="item-name">${item.name}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <span class="${badgeClass}">${item.category_name} (${typeLabel})</span>
+          <button class="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 btn-edit" data-entity="subcategories" data-id="${item.id}">✏️</button>
+          <button class="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 btn-del" data-entity="subcategories" data-id="${item.id}" data-category_id="${item.category_id}">🗑️</button>
+        </div>
+      </div>
+      <div class="edit hidden mt-2 flex items-center gap-2">
+        <input type="text" class="input flex-1 edit-input" value="${item.name}" />
+        <button class="btn-primary btn-save" data-entity="subcategories" data-id="${item.id}">✓</button>
+        <button class="btn-secondary btn-cancel">×</button>
+      </div>`;
+    ul.appendChild(li);
+  });
+}
+
+function renderCostCentersList(items) {
+  const ul = qs('#list-costcenters');
+  if (!ul) return;
+  ul.innerHTML = '';
+  items.forEach(item => {
+    const li = document.createElement('li');
+    li.className = 'flex flex-col py-1 border-b border-slate-100 dark:border-slate-700';
+    li.innerHTML = `
+      <div class="view flex items-center justify-between">
+        <span class="item-name">${item.name}</span>
+        <div class="flex items-center gap-2">
+          <button class="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 btn-edit" data-entity="cost_centers" data-id="${item.id}">✏️</button>
+          <button class="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 btn-del" data-entity="cost_centers" data-id="${item.id}">🗑️</button>
+        </div>
+      </div>
+      <div class="edit hidden mt-2 flex items-center gap-2">
+        <input type="text" class="input flex-1 edit-input" value="${item.name}" />
+        <button class="btn-primary btn-save" data-entity="cost_centers" data-id="${item.id}">✓</button>
+        <button class="btn-secondary btn-cancel">×</button>
+      </div>`;
+    ul.appendChild(li);
+  });
+}
+
+function renderAccountsList(items) {
+  const ul = qs('#list-accounts');
+  if (!ul) return;
+  ul.innerHTML = '';
+  items.forEach(item => {
+    const li = document.createElement('li');
+    li.className = 'flex flex-col py-1 border-b border-slate-100 dark:border-slate-700';
+    const balance = typeof item.initial_balance !== 'undefined' ? formatBRL(parseFloat(item.initial_balance)) : formatBRL(0);
+    const starIcon = item.is_default ? '⭐' : '☆';
+    li.innerHTML = `
+      <div class="view flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <span class="item-name">${item.name}</span>
+          <span class="text-sm text-slate-500">${balance}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          <button class="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 btn-default" data-entity="accounts" data-id="${item.id}" title="Definir como padrão">${starIcon}</button>
+          <button class="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 btn-edit" data-entity="accounts" data-id="${item.id}">✏️</button>
+          <button class="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 btn-del" data-entity="accounts" data-id="${item.id}">🗑️</button>
+        </div>
+      </div>
+      <div class="edit hidden mt-2 grid grid-cols-1 md:grid-cols-3 gap-2 items-center">
+        <input type="text" class="input md:col-span-2 edit-input" value="${item.name}" />
+        <input type="text" class="input edit-balance" value="${balance.replace(/[^0-9.,-]/g,'')}" placeholder="Saldo Inicial (R$)" />
+        <button class="btn-primary btn-save" data-entity="accounts" data-id="${item.id}">✓</button>
+        <button class="btn-secondary btn-cancel">×</button>
+      </div>`;
+    ul.appendChild(li);
+  });
+}
+
+function renderPaymentMethodsWithFees(paymentMethods, fees) {
+  const ul = qs('#list-payments');
+  const cardsWrap = qs('#cards-machines');
+  if (ul) ul.innerHTML = '';
+  if (cardsWrap) cardsWrap.innerHTML = '';
+
+  const feeMap = {};
+  (fees || []).forEach(f => { (feeMap[f.payment_method_id] = feeMap[f.payment_method_id] || []).push(f); });
+
+  (paymentMethods || []).forEach(pm => {
+    // Render list item for Payment Methods tab
+    if (ul) {
+      const li = document.createElement('li');
+      li.className = 'flex flex-col py-1 border-b border-slate-100 dark:border-slate-700';
+      li.innerHTML = `
+        <div class="view flex items-center justify-between">
+          <span class="item-name">${pm.name}</span>
+          <div class="flex items-center gap-2">
+            <button class="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 btn-edit" data-entity="payment_methods" data-id="${pm.id}">✏️</button>
+            <button class="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 btn-del" data-entity="payment_methods" data-id="${pm.id}">🗑️</button>
+          </div>
+        </div>
+        <div class="edit hidden mt-2 flex items-center gap-2">
+          <input type="text" class="input flex-1 edit-input" value="${pm.name}" />
+          <button class="btn-primary btn-save" data-entity="payment_methods" data-id="${pm.id}">✓</button>
+          <button class="btn-secondary btn-cancel">×</button>
+        </div>`;
+      ul.appendChild(li);
+    }
+
+    // Render card for Fees tab
+    if (cardsWrap) {
+      const card = document.createElement('div');
+      card.className = 'card space-y-3';
+      const feesForPm = feeMap[pm.id] || [];
+      card.innerHTML = `
+        <div class="flex items-center justify-between">
+          <h4 class="text-sm font-semibold">${pm.name}</h4>
+        </div>
+        <form class="fee-form grid grid-cols-1 md:grid-cols-3 gap-2" data-pm="${pm.id}">
+          <input type="text" name="name" class="input md:col-span-2" placeholder="Descrição da Taxa" required />
+          <input type="number" name="percent" class="input" step="0.01" min="0" placeholder="Taxa (%)" required />
+          <button type="submit" class="btn-primary md:col-span-3">Adicionar Taxa</button>
+        </form>
+        <ul class="space-y-1 fee-list" data-pm="${pm.id}"></ul>`;
+      cardsWrap.appendChild(card);
+      const list = card.querySelector('.fee-list');
+      feesForPm.forEach(f => {
+        const li = document.createElement('li');
+        li.className = 'flex items-center justify-between py-1 border-b border-slate-100 dark:border-slate-700';
+        li.innerHTML = `
+          <span>${f.name} — ${(parseFloat(f.percent)*100).toFixed(2)}%</span>
+          <button class="p-2 rounded hover:bg-slate-100 dark:hover:bg-slate-700 btn-fee-del" data-id="${f.id}" data-pm_id="${pm.id}">🗑️</button>`;
+        list.appendChild(li);
+      });
+    }
+  });
+}
+
 function bindCatalogForms() {
+  // Prevent duplicate bindings when navigating to Catalogs multiple times
+  if (state.catalogFormsBound) return;
+  state.catalogFormsBound = true;
   const forms = {
     categories: qs('#form-category'),
     subcategories: qs('#form-subcategory'),
     cost_centers: qs('#form-costcenter'),
     accounts: qs('#form-account'),
     payment_methods: qs('#form-payment'),
-    fees: qs('#form-fee'),
   };
+  // Attach currency mask to account initial balance
+  const initBal = forms.accounts?.querySelector('input[name="initial_balance"]');
+  if (initBal) attachCurrencyMask(initBal);
   if (forms.categories) forms.categories.addEventListener('submit', async (e) => {
     e.preventDefault();
     const data = Object.fromEntries(new FormData(forms.categories));
@@ -1076,7 +1598,14 @@ function bindCatalogForms() {
   });
   if (forms.accounts) forms.accounts.addEventListener('submit', async (e) => {
     e.preventDefault();
-    const data = Object.fromEntries(new FormData(forms.accounts));
+    const fd = new FormData(forms.accounts);
+    const data = Object.fromEntries(fd);
+    data.initial_balance = parseBRLToFloat(data.initial_balance);
+    // Always send boolean and ensure there is at least one default account.
+    const userSelectedDefault = !!fd.get('is_default');
+    const hasDefault = (state.catalogs?.accounts || []).some(a => a.is_default === true);
+    // If no default exists yet and user did not select, make this new one default
+    data.is_default = hasDefault ? userSelectedDefault : true;
     await apiCatalogsCRUD('accounts','create', data);
     await loadCatalogs();
     refreshCatalogLists();
@@ -1091,13 +1620,100 @@ function bindCatalogForms() {
     refreshCatalogLists();
     forms.payment_methods.reset();
   });
-  if (forms.fees) forms.fees.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    const data = Object.fromEntries(new FormData(forms.fees));
-    await apiCatalogsCRUD('fees','create', data);
-    await loadCatalogs();
-    refreshCatalogLists();
-    forms.fees.reset();
+}
+
+function bindCatalogDeletesAndEdits() {
+  // Inline edit toggling
+  qsa('#view-catalogs li .btn-edit').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('li');
+      if (!li) return;
+      li.querySelector('.view')?.classList.add('hidden');
+      li.querySelector('.edit')?.classList.remove('hidden');
+      const balInput = li.querySelector('.edit-balance');
+      if (balInput) attachCurrencyMask(balInput);
+    });
+  });
+  qsa('#view-catalogs li .btn-cancel').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const li = btn.closest('li');
+      if (!li) return;
+      li.querySelector('.edit')?.classList.add('hidden');
+      li.querySelector('.view')?.classList.remove('hidden');
+    });
+  });
+  qsa('#view-catalogs li .btn-save').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      const entity = btn.dataset.entity;
+      const id = btn.dataset.id;
+      const li = btn.closest('li');
+      if (!entity || !id || !li) return;
+      const payload = { id };
+      const nameInput = li.querySelector('.edit-input');
+      if (nameInput) payload.name = nameInput.value.trim();
+      if (entity === 'accounts') {
+        const balInput = li.querySelector('.edit-balance');
+        if (balInput) payload.initial_balance = parseBRLToFloat(balInput.value);
+      }
+      const res = await apiCatalogsCRUD(entity, 'update', payload);
+      if (res?.success) {
+        await refreshCatalogLists();
+      }
+    });
+  });
+
+  // Delete with transient confirm
+  qsa('#view-catalogs li .btn-del').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.confirming === '1') return; // already in confirm state
+      btn.dataset.original = btn.textContent;
+      btn.textContent = 'Confirmar?';
+      btn.dataset.confirming = '1';
+      const entity = btn.dataset.entity; const id = btn.dataset.id;
+      const timer = setTimeout(() => { btn.textContent = btn.dataset.original || '🗑️'; btn.dataset.confirming = '0'; }, 2500);
+      const onConfirm = async () => {
+        clearTimeout(timer);
+        btn.removeEventListener('click', onConfirm);
+        const res = await apiCatalogsCRUD(entity, 'delete', { id });
+        if (res?.success) await refreshCatalogLists();
+      };
+      btn.addEventListener('click', onConfirm, { once: true });
+    });
+  });
+
+  // Fee forms inside cards
+  qsa('#view-catalogs .fee-form').forEach(form => {
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const pmId = form.dataset.pm;
+      const fd = new FormData(form);
+      const name = fd.get('name');
+      const percent = parseFloat(fd.get('percent') || '0');
+      const res = await apiCatalogsCRUD('fees', 'create', { payment_method_id: pmId, name, percent: percent / 100 });
+      if (res?.success) {
+        await refreshCatalogLists();
+        form.reset();
+      }
+    });
+  });
+
+  // Fee deletes
+  qsa('#view-catalogs .btn-fee-del').forEach(btn => {
+    btn.addEventListener('click', () => {
+      if (btn.dataset.confirming === '1') return;
+      btn.dataset.original = btn.textContent;
+      btn.textContent = 'Confirmar?';
+      btn.dataset.confirming = '1';
+      const id = btn.dataset.id; const pmId = btn.dataset.pm_id;
+      const timer = setTimeout(() => { btn.textContent = btn.dataset.original || '🗑️'; btn.dataset.confirming = '0'; }, 2500);
+      const onConfirm = async () => {
+        clearTimeout(timer);
+        btn.removeEventListener('click', onConfirm);
+        const res = await apiCatalogsCRUD('fees', 'delete', { id, payment_method_id: pmId });
+        if (res?.success) await refreshCatalogLists();
+      };
+      btn.addEventListener('click', onConfirm, { once: true });
+    });
   });
 }
 
@@ -1114,5 +1730,38 @@ function bindCatalogDeletes() {
     await apiCatalogsCRUD(entity,'delete', payload);
     await loadCatalogs();
     refreshCatalogLists();
+  });
+}
+
+// Toggle account default via star button using event delegation
+function bindCatalogDefaultToggle() {
+  if (state.catalogDefaultBound) return;
+  state.catalogDefaultBound = true;
+  const container = qs('#view-catalogs');
+  if (!container) return;
+  container.addEventListener('click', async (e) => {
+    const btn = e.target.closest('.btn-default');
+    if (!btn) return;
+    const id = btn.dataset.id;
+    if (!id) return;
+    // Optimistic UI: immediately swap stars to reflect new default
+    const all = qsa('#view-catalogs li .btn-default');
+    const prevBtn = all.find(b => b.textContent === '⭐');
+    all.forEach(b => { b.textContent = '☆'; });
+    btn.textContent = '⭐';
+    // Disable during request to avoid rapid double toggles
+    all.forEach(b => b.setAttribute('disabled','true'));
+    const res = await apiCatalogsCRUD('accounts', 'update', { id, is_default: true });
+    all.forEach(b => b.removeAttribute('disabled'));
+    if (!res?.success) {
+      // Revert UI on failure
+      btn.textContent = '☆';
+      if (prevBtn) prevBtn.textContent = '⭐';
+      alert(res?.message || 'Erro ao definir conta padrão');
+      return;
+    }
+    // Refresh lists to ensure single default from backend and sync state
+    await loadCatalogs();
+    await refreshCatalogLists();
   });
 }

@@ -1,70 +1,279 @@
-/* Gradiente de fundo e animações */
-.gradient-bg {
-  background: radial-gradient(1200px 600px at 20% 20%, rgba(74,105,189,0.15), transparent),
-              radial-gradient(800px 400px at 80% 0%, rgba(142,68,173,0.12), transparent),
-              linear-gradient(180deg, #f5f7fa, #eef1f7);
+/* =========================================================
+    STYLES V3.0 - Lobo Finance
+    Correções: Fundo Dark/Light, Contraste Mobile, Layout geral.
+========================================================= */
+
+/* --- RESET BÁSICO E CORES GLOBAIS --- */
+:root {
+    --color-accent: #4a69bd;
+    --color-income: #2ecc71;
+    --color-expense: #e74c3c;
+    --color-profit: #8e44ad;
+    --color-light-bg: #f5f7fa;
+    --color-dark-bg: #0f172a;      /* Tom de azul bem escuro */
+    --color-dark-card: #1e293b;    /* Tom de azul-cinza escuro */
+    --color-dark-text: #e2e8f0;
 }
 
-.animate-fade-in { animation: fadeIn 280ms ease-out both; }
-@keyframes fadeIn { from { opacity: 0; transform: translateY(8px); } to { opacity: 1; transform: translateY(0); } }
+body {
+    background-color: var(--color-light-bg);
+}
+.dark body {
+    background-color: var(--color-dark-bg);
+}
 
-/* Utilitários */
-.input { padding: 0.6rem 0.75rem; border-radius: 0.5rem; border: 1px solid rgba(100,116,139,.3); background: white; }
-.select { padding: 0.6rem 0.75rem; border-radius: 0.5rem; border: 1px solid rgba(100,116,139,.3); background: white; width: 100%; }
-.btn-primary { padding: 0.6rem 0.75rem; border-radius: 0.75rem; background: #4a69bd; color: white; }
-.btn-secondary { padding: 0.6rem 0.75rem; border-radius: 0.75rem; background: #e2e8f0; }
-.btn-danger { padding: 0.6rem 0.75rem; border-radius: 0.75rem; background: #e74c3c; color: white; }
-.card { background: white; border-radius: 0.75rem; box-shadow: 0 10px 24px rgba(0,0,0,.06); padding: 1rem; }
+/* --- ELEMENTOS DE FORMULÁRIO (INPUT, SELECT) --- */
+.input, .select {
+    padding: 0.6rem 0.75rem;
+    border-radius: 0.5rem;
+    border: 1px solid #cbd5e1; /* Cinza claro */
+    background-color: white;
+    width: 100%;
+    color: #1e293b;
+}
+.dark .input, .dark .select {
+    background-color: var(--color-dark-card);
+    border-color: #475569; /* Cinza mais escuro */
+    color: var(--color-dark-text);
+}
+.input::placeholder {
+    color: #94a3b8;
+}
+.dark .input::placeholder {
+    color: #64748b;
+}
 
-.dark .input, .dark .select { background: #2d3748; border-color: #475569; color: #e2e8f0; }
-.dark .card { background: #2d3748; }
-.menu-item { display: block; width: 100%; text-align: left; padding: .5rem .75rem; border-radius: .5rem; }
-.menu-item:hover { background: rgba(148,163,184,.25); }
+/* --- BOTÕES --- */
+.btn-primary {
+    padding: 0.6rem 1rem;
+    border-radius: 0.5rem;
+    background-color: var(--color-accent);
+    color: white;
+    font-weight: 500;
+    transition: all 0.2s ease;
+}
+.btn-primary:hover {
+    filter: brightness(1.1);
+    box-shadow: 0 4px 16px rgba(74,105,189,.4);
+}
+.btn-secondary {
+    padding: 0.6rem 1rem;
+    border-radius: 0.5rem;
+    background-color: #e2e8f0;
+    color: #334155;
+    font-weight: 500;
+}
+.dark .btn-secondary {
+    background-color: #334155;
+    color: var(--color-dark-text);
+}
+.btn-danger {
+    padding: 0.6rem 1rem;
+    border-radius: 0.5rem;
+    background-color: var(--color-expense);
+    color: white;
+    font-weight: 500;
+}
 
-.nav-link { display: block; padding: .5rem .75rem; border-radius: .5rem; color: #334155; }
-.nav-link.active, .nav-link:hover { background: rgba(74,105,189,.12); color: #1e293b; }
-.dark .nav-link { color: #e2e8f0; }
-.dark .nav-link.active, .dark .nav-link:hover { background: rgba(74,105,189,.25); }
+/* --- CARDS E LAYOUT PRINCIPAL --- */
+.card {
+    background-color: white;
+    border-radius: 0.75rem;
+    box-shadow: 0 4px 12px rgba(0,0,0,.05);
+    padding: 1rem;
+    border: 1px solid #e2e8f0;
+}
+.dark .card {
+    background-color: var(--color-dark-card);
+    border-color: #334155;
+    color: var(--color-dark-text);
+    box-shadow: 0 8px 20px rgba(0,0,0,.2);
+}
 
-/* FAB */
-.fab { position: fixed; right: 1.25rem; bottom: 1.25rem; width: 3rem; height: 3rem; border-radius: 9999px; background: #4a69bd; color: white; font-size: 1.5rem; line-height: 3rem; text-align: center; box-shadow: 0 12px 28px rgba(74,105,189,.35); }
-.fab-menu { position: fixed; right: 1.25rem; bottom: 5.5rem; display: flex; flex-direction: column; gap: .5rem; }
+/* --- Dashboard Chart Container --- */
+.chart-card {
+    position: relative;
+    /* Altura fixa para evitar loops de resize do Chart.js */
+    min-height: 340px; /* inclui título */
+}
+#lineChart {
+    width: 100% !important;
+    height: 300px !important; /* altura controlada do canvas */
+}
 
-/* Modal */
-.modal { position: fixed; inset: 0; background: rgba(0,0,0,.35); display: grid; place-items: center; padding: 1rem; }
-.modal-content { width: 100%; max-width: 720px; background: white; border-radius: 1rem; box-shadow: 0 20px 40px rgba(0,0,0,.18); padding: 1rem; }
-.dark .modal-content { background: #2d3748; }
+/* Cards de Estatística do Dashboard */
+.card-stat {
+    display: flex;
+    align-items: center;
+    gap: 1rem;
+    transition: transform 0.2s ease-out;
+}
+.card-stat:hover {
+    transform: translateY(-4px);
+}
+.card-icon {
+    width: 3rem;
+    height: 3rem;
+    border-radius: 9999px;
+    display: grid;
+    place-items: center;
+    font-size: 1.25rem;
+    flex-shrink: 0;
+}
 
-/* Sidebar móvel e overlay */
-.sidebar { width: 16rem; background: white; border-right: 1px solid rgba(226,232,240,.8); }
-.dark .sidebar { background: #2d3748; border-right-color: #475569; }
-.sidebar { position: fixed; left: 0; top: 0; height: 100vh; transform: translateX(-100%); transition: transform .25s ease; z-index: 30; }
-.sidebar.open { transform: translateX(0); }
+/* Container principal que recebe o conteúdo das páginas */
+main.flex-1 {
+    background-color: var(--color-light-bg);
+}
+.dark main.flex-1 {
+    background-color: var(--color-dark-bg);
+}
+
+.container-responsive {
+    width: 100%;
+    max-width: 1280px;
+    margin-left: auto;
+    margin-right: auto;
+    padding: 1rem;
+}
 @media (min-width: 768px) {
-  .sidebar { position: relative; transform: none; height: auto; }
+    .container-responsive { padding: 1.5rem; }
 }
-.sidebar-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); z-index: 20; }
 
-/* Container responsivo */
-.container-responsive { width: 100%; max-width: 1280px; margin: 0 auto; padding: 1rem; }
-@media (min-width: 768px) { .container-responsive { padding: 1.5rem; } }
+/* --- SIDEBAR E NAVEGAÇÃO --- */
+.sidebar {
+    width: 16rem;
+    background-color: white;
+    border-right: 1px solid #e2e8f0;
+    position: fixed;
+    left: 0;
+    top: 0;
+    height: 100vh;
+    transform: translateX(-100%);
+    transition: transform .25s ease-out;
+    z-index: 40;
+}
+.sidebar.open {
+    transform: translateX(0);
+}
+@media (min-width: 768px) {
+    .sidebar {
+        position: relative;
+        transform: none;
+        height: auto;
+    }
+}
+.sidebar-overlay {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0,0,0,.5);
+    z-index: 30;
+}
+.dark .sidebar {
+    background-color: #111827; /* Fundo do sidebar escuro */
+    border-right-color: #334155;
+}
 
-/* Cartões e tema dark refinado */
-.card { border: 1px solid rgba(226,232,240,.8); }
-.dark .card { border-color: #475569; box-shadow: 0 10px 24px rgba(0,0,0,.25); }
-.dark .input, .dark .select { background: #1f2937; border-color: #334155; color: #e2e8f0; }
-.btn-primary:hover { filter: brightness(1.05); }
-.dark .btn-secondary { background: #475569; color: #e2e8f0; }
+.nav-link {
+    display: flex;
+    align-items: center;
+    padding: 0.75rem 1rem;
+    border-radius: 0.5rem;
+    font-weight: 500;
+    color: #334155;
+}
+.nav-link.active {
+    background-color: var(--color-accent);
+    color: white;
+}
+.nav-link:not(.active):hover {
+    background-color: #f1f5f9;
+}
+.dark .nav-link {
+    color: var(--color-dark-text);
+}
+.dark .nav-link:not(.active):hover {
+    background-color: #334155;
+}
 
-/* Gráficos responsivos */
-.chart-card { min-height: 260px; }
-@media (min-width: 1024px) { .chart-card { min-height: 340px; } }
+/* --- MODAL --- */
+.modal {
+    position: fixed;
+    inset: 0;
+    background-color: rgba(0,0,0,.5);
+    display: grid;
+    place-items: center;
+    padding: 1rem;
+    z-index: 50;
+}
+.modal-content {
+    width: 100%;
+    max-width: 720px;
+    background-color: white;
+    border-radius: 1rem;
+    box-shadow: 0 20px 40px rgba(0,0,0,.18);
+    padding: 1.5rem;
+    overflow-y: auto;
+    max-height: 90vh;
+}
+.dark .modal-content {
+    background-color: var(--color-dark-card);
+    border: 1px solid #334155;
+}
+.dark span {
+  color: white;
+}
+.dark h3 {
+  color: white;
+}
+/* --- OUTROS --- */
+.fab {
+    position: fixed;
+    right: 1.25rem;
+    bottom: 1.25rem;
+    width: 3.5rem;
+    height: 3.5rem;
+    border-radius: 9999px;
+    background-color: var(--color-accent);
+    color: white;
+    font-size: 1.75rem;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 12px 28px rgba(74,105,189,.35);
+    cursor: pointer;
+    z-index: 20;
+}
+.fab-menu {
+    position: fixed;
+    right: 1.25rem;
+    bottom: 6rem;
+    display: flex;
+    flex-direction: column;
+    gap: .75rem;
+    z-index: 20;
+}
 
-/* Pílulas de status */
-.pill { display: inline-block; padding: .25rem .5rem; border-radius: 9999px; font-size: .75rem; }
-.pill-green { background: #d1fae5; color: #065f46; }
-.dark .pill-green { background: #065f46; color: #d1fae5; }
-.pill-gray { background: #e5e7eb; color: #374151; }
-.dark .pill-gray { background: #374151; color: #e5e7eb; }
-.pill-orange { background: #ffedd5; color: #9a3412; }
-.dark .pill-orange { background: #9a3412; color: #ffedd5; }
+.pill {
+    display: inline-block;
+    padding: .25rem .6rem;
+    border-radius: 9999px;
+    font-size: .75rem;
+    font-weight: 500;
+}
+.pill-green { background-color: #d1fae5; color: #065f46; }
+.dark .pill-green { background-color: #065f46; color: #d1fae5; }
+.pill-gray { background-color: #e5e7eb; color: #374151; }
+.dark .pill-gray { background-color: #374151; color: #e5e7eb; }
+/* Red pill for Despesas */
+.pill-red { background-color: #fee2e2; color: #991b1b; }
+.dark .pill-red { background-color: #991b1b; color: #fee2e2; }
+
+/* Consistent colors for Receitas/Despesas headings and values */
+.heading-green { color: var(--color-income); }
+.heading-red { color: var(--color-expense); }
+.text-income { color: var(--color-income); }
+.text-expense { color: var(--color-expense); }
+
+/* Light tinted backgrounds for dashboard icons */
+.bg-income\/20 { background-color: rgba(46, 204, 113, 0.20); }
+.bg-expense\/20 { background-color: rgba(231, 76, 60, 0.20); }

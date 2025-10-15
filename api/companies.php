@@ -6,30 +6,19 @@ if (!isset($_SESSION['user_id'])) {
   echo json_encode([ 'success' => false, 'message' => 'Não autenticado' ]);
   exit;
 }
-
-$storageDir = __DIR__ . '/../storage';
-$companiesFile = $storageDir . '/companies.json';
-if (!is_dir($storageDir)) { mkdir($storageDir, 0777, true); }
-if (!file_exists($companiesFile)) { file_put_contents($companiesFile, json_encode([])); }
-
-function readCompanies($file) {
-  $raw = file_get_contents($file);
-  $data = json_decode($raw, true);
-  return is_array($data) ? $data : [];
-}
-
-function writeCompanies($file, $companies) {
-  file_put_contents($file, json_encode($companies, JSON_PRETTY_PRINT|JSON_UNESCAPED_UNICODE));
-}
+require_once __DIR__ . '/db.php';
 
 $method = $_SERVER['REQUEST_METHOD'];
 $input = json_decode(file_get_contents('php://input'), true) ?? [];
 $userId = $_SESSION['user_id'];
 
 try {
-  $companies = readCompanies($companiesFile);
+  $pdo = db();
+  if (!$pdo) throw new Exception('A conexão com o banco de dados não pôde ser estabelecida.');
   if ($method === 'GET') {
-    $items = array_values(array_filter($companies, fn($c) => $c['user_id'] === $userId));
+    $stmt = $pdo->prepare('SELECT id, name FROM companies WHERE user_id = :uid ORDER BY name');
+    $stmt->execute([':uid' => $userId]);
+    $items = $stmt->fetchAll();
     echo json_encode([ 'success' => true, 'items' => $items ]);
     exit;
   }
@@ -37,9 +26,11 @@ try {
     $name = trim($input['name'] ?? '');
     if (!$name) throw new Exception('Nome é obrigatório');
     $id = uniqid('cmp_');
-    $companies[] = [ 'id' => $id, 'name' => $name, 'user_id' => $userId ];
-    writeCompanies($companiesFile, $companies);
-    $items = array_values(array_filter($companies, fn($c) => $c['user_id'] === $userId));
+    $pdo->prepare('INSERT INTO companies (id, user_id, name) VALUES (:id,:uid,:name)')
+        ->execute([':id'=>$id, ':uid'=>$userId, ':name'=>$name]);
+    $stmt = $pdo->prepare('SELECT id, name FROM companies WHERE user_id = :uid ORDER BY name');
+    $stmt->execute([':uid' => $userId]);
+    $items = $stmt->fetchAll();
     echo json_encode([ 'success' => true, 'items' => $items ]);
     exit;
   }

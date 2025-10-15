@@ -30,12 +30,19 @@
         }
       }
     </script>
-    <link rel="stylesheet" href="/styles.css" />
+    <link rel="stylesheet" href="styles.css" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   </head>
   <body class="min-h-screen bg-lightbg text-slate-800 dark:bg-darkbg dark:text-darktext transition-colors duration-300">
+    <!-- Loading View -->
+    <section id="loading-view" class="flex items-center justify-center min-h-screen p-4">
+      <div class="text-center">
+        <div class="animate-spin inline-block w-8 h-8 border-4 border-slate-300 border-t-accent rounded-full mb-3"></div>
+        <div class="text-sm text-slate-500 dark:text-slate-300">Carregando...</div>
+      </div>
+    </section>
     <!-- Auth View -->
-    <section id="auth-view" class="flex items-center justify-center min-h-screen p-4">
+    <section id="auth-view" class="hidden flex items-center justify-center min-h-screen p-4">
       <div class="absolute inset-0 -z-10 gradient-bg"></div>
       <div class="w-full max-w-md bg-white/90 dark:bg-darkcard rounded-2xl shadow-lg p-6">
         <div class="text-center mb-6">
@@ -47,14 +54,14 @@
           <button id="btn-register" class="flex-1 py-2 rounded-lg bg-slate-200 dark:bg-slate-700">Cadastro</button>
         </div>
         <!-- Login Form -->
-        <form id="form-login" class="space-y-3">
+        <form id="form-login" class="space-y-3" method="POST">
           <input type="email" name="email" placeholder="Email" class="w-full input" required />
           <input type="password" name="password" placeholder="Senha" class="w-full input" required />
           <button type="submit" class="w-full btn-primary">Entrar</button>
           <button type="button" id="btn-google" class="w-full btn-secondary">Entrar com Google</button>
         </form>
         <!-- Register Form -->
-        <form id="form-register" class="space-y-3 hidden">
+        <form id="form-register" class="space-y-3 hidden" method="POST">
           <input type="text" name="name" placeholder="Nome" class="w-full input" required />
           <input type="email" name="email" placeholder="Email" class="w-full input" required />
           <input type="password" name="password" placeholder="Senha" class="w-full input" required />
@@ -68,7 +75,7 @@
       <div class="max-w-xl mx-auto bg-white dark:bg-darkcard rounded-2xl shadow-lg p-6 animate-fade-in">
         <h2 class="text-2xl font-semibold mb-2">Bem-vindo, <span id="onboarding-name"></span> 👋</h2>
         <p class="text-slate-600 dark:text-slate-300 mb-4">Crie sua primeira Empresa/Cofre financeiro para começar.</p>
-        <form id="form-company" class="space-y-3">
+        <form id="form-company" class="space-y-3" method="POST">
           <input type="text" name="name" placeholder="Nome da Empresa" class="w-full input" required />
           <button type="submit" class="btn-primary">Criar Empresa</button>
         </form>
@@ -136,26 +143,39 @@
 
               <!-- Cards de resumo -->
               <div class="grid grid-cols-1 md:grid-cols-4 gap-4">
-                <div class="card bg-green-50 dark:bg-green-900/30">
-                  <div class="text-sm">Receitas</div>
-                  <div id="card-income" class="text-2xl font-semibold text-income">R$ 0,00</div>
+                <div class="card card-stat">
+                    <div class="card-icon bg-income/20 text-income">💰</div>
+                    <div>
+                        <div class="text-sm">Receitas</div>
+                        <div id="card-income" class="text-2xl font-semibold">R$ 0,00</div>
+                    </div>
                 </div>
-                <div class="card bg-red-50 dark:bg-red-900/30">
-                  <div class="text-sm">Despesas</div>
-                  <div id="card-expense" class="text-2xl font-semibold text-expense">R$ 0,00</div>
+                <div class="card card-stat">
+                    <div class="card-icon bg-expense/20 text-expense">💸</div>
+                    <div>
+                        <div class="text-sm">Despesas</div>
+                        <div id="card-expense" class="text-2xl font-semibold">R$ 0,00</div>
+                    </div>
                 </div>
-                <div class="card bg-purple-50 dark:bg-purple-900/30">
-                  <div class="text-sm">Lucro/Prejuízo</div>
-                  <div id="card-profit" class="text-2xl font-semibold text-profit">R$ 0,00</div>
+                <div class="card card-stat">
+                    <div class="card-icon bg-profit/20 text-profit">📈</div>
+                    <div>
+                        <div class="text-sm">Lucro/Prejuízo</div>
+                        <div id="card-profit" class="text-2xl font-semibold">R$ 0,00</div>
+                    </div>
                 </div>
-                <div class="card bg-blue-50 dark:bg-blue-900/30">
-                  <div class="text-sm">Lucratividade</div>
-                  <div id="card-margin" class="text-2xl font-semibold text-accent">0%</div>
+                <div class="card card-stat">
+                    <div class="card-icon bg-accent/20 text-accent">📊</div>
+                    <div>
+                        <div class="text-sm">Lucratividade</div>
+                        <div id="card-margin" class="text-2xl font-semibold">0%</div>
+                    </div>
                 </div>
               </div>
 
               <!-- Gráfico de linha -->
               <div class="card chart-card">
+                <h3 id="chart-title" class="text-sm mb-2">Visão Geral de <span id="chart-year">—</span></h3>
                 <canvas id="lineChart"></canvas>
               </div>
 
@@ -228,6 +248,23 @@
                   <tbody id="tx-table-body"></tbody>
                 </table>
               </div>
+              <!-- Paginação -->
+              <div class="flex flex-col md:flex-row md:items-center md:justify-between gap-3">
+                <div class="flex items-center gap-2">
+                  <span class="text-sm text-slate-600 dark:text-slate-300">Registros por página</span>
+                  <select id="tx-page-size" class="select">
+                    <option value="10">10</option>
+                    <option value="50">50</option>
+                    <option value="100">100</option>
+                    <option value="500">500</option>
+                  </select>
+                </div>
+                <div class="flex items-center gap-2">
+                  <button id="tx-page-prev" class="btn-secondary">Anterior</button>
+                  <span id="tx-page-info" class="text-sm">Página 1 de 1</span>
+                  <button id="tx-page-next" class="btn-secondary">Próxima</button>
+                </div>
+              </div>
             </section>
             <section id="view-reports" class="hidden">
               <div class="card">Relatórios (em breve)</div>
@@ -269,7 +306,7 @@
               </div>
             </section>
             <section id="view-catalogs" class="hidden space-y-4">
-              <div class="flex gap-2">
+              <div class="flex flex-wrap gap-2">
                 <button class="tab btn-secondary" data-tab="categories">Categorias</button>
                 <button class="tab btn-secondary" data-tab="subcategories">Subcategorias</button>
                 <button class="tab btn-secondary" data-tab="cost_centers">Centros de Custo</button>
@@ -287,16 +324,20 @@
                   </select>
                   <button type="submit" class="btn-primary">Adicionar</button>
                 </form>
-                <table class="w-full text-sm">
-                  <thead>
-                    <tr class="text-left text-slate-500 dark:text-slate-300">
-                      <th class="py-2 pr-3">Nome</th>
-                      <th class="py-2 pr-3">Tipo</th>
-                      <th class="py-2 pr-3">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody id="tbl-categories"></tbody>
-                </table>
+                <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div class="card">
+                    <div class="flex items-center justify-between mb-2">
+                      <h4 class="text-sm font-semibold heading-green">Receitas</h4>
+                    </div>
+                    <ul id="list-categories-income" class="space-y-1"></ul>
+                  </div>
+                  <div class="card">
+                    <div class="flex items-center justify-between mb-2">
+                      <h4 class="text-sm font-semibold heading-red">Despesas</h4>
+                    </div>
+                    <ul id="list-categories-expense" class="space-y-1"></ul>
+                  </div>
+                </div>
               </div>
               <!-- Subcategories -->
               <div id="tab-subcategories" class="tab-panel card space-y-3 hidden">
@@ -305,16 +346,9 @@
                   <input type="text" name="name" placeholder="Nome da Subcategoria" class="input" required />
                   <button type="submit" class="btn-primary">Adicionar</button>
                 </form>
-                <table class="w-full text-sm">
-                  <thead>
-                    <tr class="text-left text-slate-500 dark:text-slate-300">
-                      <th class="py-2 pr-3">Categoria</th>
-                      <th class="py-2 pr-3">Nome</th>
-                      <th class="py-2 pr-3">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody id="tbl-subcategories"></tbody>
-                </table>
+                <div class="card">
+                  <ul id="list-subcategories" class="space-y-1"></ul>
+                </div>
               </div>
               <!-- Cost Centers -->
               <div id="tab-cost_centers" class="tab-panel card space-y-3 hidden">
@@ -322,31 +356,24 @@
                   <input type="text" name="name" placeholder="Nome do Centro de Custo" class="input" required />
                   <button type="submit" class="btn-primary">Adicionar</button>
                 </form>
-                <table class="w-full text-sm">
-                  <thead>
-                    <tr class="text-left text-slate-500 dark:text-slate-300">
-                      <th class="py-2 pr-3">Nome</th>
-                      <th class="py-2 pr-3">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody id="tbl-costcenters"></tbody>
-                </table>
+                <div class="card">
+                  <ul id="list-costcenters" class="space-y-1"></ul>
+                </div>
               </div>
               <!-- Accounts -->
               <div id="tab-accounts" class="tab-panel card space-y-3 hidden">
-                <form id="form-account" class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <input type="text" name="name" placeholder="Nome da Conta" class="input" required />
-                  <button type="submit" class="btn-primary">Adicionar</button>
+                <form id="form-account" class="grid grid-cols-1 md:grid-cols-4 gap-3">
+                  <input type="text" name="name" placeholder="Nome da Conta" class="input md:col-span-2" required />
+                  <input type="text" name="initial_balance" placeholder="Saldo Inicial (R$)" class="input" />
+                  <label class="flex items-center gap-2">
+                    <input type="checkbox" name="is_default" />
+                    <span>Padrão?</span>
+                  </label>
+                  <button type="submit" class="btn-primary md:col-span-4">Adicionar</button>
                 </form>
-                <table class="w-full text-sm">
-                  <thead>
-                    <tr class="text-left text-slate-500 dark:text-slate-300">
-                      <th class="py-2 pr-3">Nome</th>
-                      <th class="py-2 pr-3">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody id="tbl-accounts"></tbody>
-                </table>
+                <div class="card">
+                  <ul id="list-accounts" class="space-y-1"></ul>
+                </div>
               </div>
               <!-- Payment Methods -->
               <div id="tab-payment_methods" class="tab-panel card space-y-3 hidden">
@@ -354,35 +381,13 @@
                   <input type="text" name="name" placeholder="Forma de Pagamento" class="input" required />
                   <button type="submit" class="btn-primary">Adicionar</button>
                 </form>
-                <table class="w-full text-sm">
-                  <thead>
-                    <tr class="text-left text-slate-500 dark:text-slate-300">
-                      <th class="py-2 pr-3">Nome</th>
-                      <th class="py-2 pr-3">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody id="tbl-payments"></tbody>
-                </table>
+                <div class="card">
+                  <ul id="list-payments" class="space-y-1"></ul>
+                </div>
               </div>
               <!-- Fees -->
               <div id="tab-fees" class="tab-panel card space-y-3 hidden">
-                <form id="form-fee" class="grid grid-cols-1 md:grid-cols-3 gap-3">
-                  <select name="payment_method_id" id="fee-payment" class="select" required></select>
-                  <input type="text" name="name" placeholder="Descrição da Taxa" class="input" required />
-                  <input type="number" step="0.0001" name="percent" placeholder="Percentual (ex: 0.02)" class="input" required />
-                  <button type="submit" class="btn-primary md:col-span-3">Adicionar</button>
-                </form>
-                <table class="w-full text-sm">
-                  <thead>
-                    <tr class="text-left text-slate-500 dark:text-slate-300">
-                      <th class="py-2 pr-3">Forma</th>
-                      <th class="py-2 pr-3">Taxa</th>
-                      <th class="py-2 pr-3">Percentual</th>
-                      <th class="py-2 pr-3">Ações</th>
-                    </tr>
-                  </thead>
-                  <tbody id="tbl-fees"></tbody>
-                </table>
+                <div id="cards-machines" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
               </div>
             </section>
           </div>
@@ -399,7 +404,7 @@
           <form id="tx-form" class="grid grid-cols-1 md:grid-cols-2 gap-3">
             <input type="text" name="description" placeholder="Descrição" class="input md:col-span-2" required />
             <input type="text" name="amount" placeholder="Valor (R$)" class="input" required />
-            <input type="date" name="date" class="input" required />
+            <input type="text" name="date" id="tx-date" placeholder="Data (dd/mm/aaaa)" class="input" required />
             <input type="hidden" name="type" id="tx-type" />
             <select name="account_id" id="tx-account" class="select md:col-span-2"></select>
             <select name="category_id" id="tx-category" class="select"></select>
@@ -447,6 +452,6 @@
       </div>
     </section>
 
-    <script src="/app.js"></script>
+  <script src="app.js"></script>
   </body>
 </html>

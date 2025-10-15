@@ -1,0 +1,6 @@
+Data,Tipo,Descrição,Valor,Categoria,Centro de Custo,Conta,Forma de Pagamento,DescricaoTaxa,Status
+01/10/2025,Receita,Serviço de consultoria,"R$ 1.350,00",Serviços,Geral,Conta Principal,Cartão (Maquininha),Crédito — 3.5%,Realizada
+02/10/2025,Despesa,Anúncios Facebook,"R$ 250,00",Marketing,Loja,Conta Principal,PIX,,Realizada
+03/10/2025,Receita,Venda de produto,"R$ 950,00",Vendas,Geral,Conta Principal,Cartão (Maquininha),Débito — 2%,Pendente
+04/10/2025,Despesa,Materiais de escritório,"R$ 180,00",Operacional,Geral,Conta Principal,Dinheiro,,Realizada
+05/10/2025,Receita,Serviço premium,"R$ 2.100,00",Serviços,Loja,Conta Principal,PIX,,Realizada

@@ -1,4 +1,6 @@
 <?php
+// Timezone padrão da aplicação
+date_default_timezone_set('America/Belem');
 // Carrega variáveis de ambiente de um arquivo .env (quando presente)
 function load_env() {
   $envFile = __DIR__ . '/../.env';
@@ -16,6 +18,10 @@ function db() {
   static $pdo = null;
   if ($pdo) return $pdo;
   load_env();
+  if (!extension_loaded('pdo_pgsql')) {
+    error_log('DB connection error: pdo_pgsql extension is not loaded');
+    throw new Exception('Extensão pdo_pgsql não está habilitada no PHP. Habilite-a no php.ini.');
+  }
   $host = getenv('PGHOST') ?: null;
   $port = getenv('PGPORT') ?: '5432';
   $db   = getenv('PGDATABASE') ?: null;
@@ -34,21 +40,44 @@ function db() {
     return $pdo;
   } catch (Throwable $e) {
     error_log('DB connection error: '.$e->getMessage());
-    return null;
+    throw $e;
   }
 }
 
 function ensure_schema(PDO $pdo) {
-  $sql = [
-    // Catálogos básicos
-    "CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS subcategories (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE, name TEXT NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS cost_centers (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS payment_methods (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL)",
-    "CREATE TABLE IF NOT EXISTS fees (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payment_method_id TEXT NOT NULL REFERENCES payment_methods(id) ON DELETE CASCADE, name TEXT NOT NULL, percent REAL NOT NULL)"
-  ];
-  foreach ($sql as $q) { $pdo->exec($q); }
+    $sql = [
+        // Usuários e Empresas
+        "CREATE TABLE IF NOT EXISTS users (id TEXT PRIMARY KEY, name TEXT, email TEXT UNIQUE NOT NULL, password TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)",
+        "CREATE TABLE IF NOT EXISTS companies (id TEXT PRIMARY KEY, user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE, name TEXT NOT NULL, created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP)",
+        // Catálogos básicos (existentes)
+        "CREATE TABLE IF NOT EXISTS categories (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, type TEXT NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS subcategories (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, category_id TEXT NOT NULL REFERENCES categories(id) ON DELETE CASCADE, name TEXT NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS cost_centers (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS accounts (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL, initial_balance NUMERIC DEFAULT 0, is_default BOOLEAN DEFAULT FALSE)",
+        "CREATE TABLE IF NOT EXISTS payment_methods (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, name TEXT NOT NULL)",
+        "CREATE TABLE IF NOT EXISTS fees (id TEXT PRIMARY KEY, user_id TEXT NOT NULL, payment_method_id TEXT NOT NULL REFERENCES payment_methods(id) ON DELETE CASCADE, name TEXT NOT NULL, percent REAL NOT NULL)",
+        
+        // COMANDO FALTANTE PARA CRIAR A TABELA DE TRANSAÇÕES
+        "CREATE TABLE IF NOT EXISTS transactions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL,
+            company_id TEXT NOT NULL,
+            description TEXT NOT NULL,
+            amount NUMERIC NOT NULL,
+            transaction_date DATE NOT NULL,
+            paid BOOLEAN DEFAULT FALSE,
+            type TEXT NOT NULL,
+            fee_amount NUMERIC DEFAULT 0,
+            account_id TEXT REFERENCES accounts(id),
+            category_id TEXT REFERENCES categories(id),
+            subcategory_id TEXT REFERENCES subcategories(id),
+            cost_center_id TEXT REFERENCES cost_centers(id),
+            payment_method_id TEXT REFERENCES payment_methods(id),
+            card_fee_id TEXT REFERENCES fees(id),
+            created_at TIMESTAMPTZ DEFAULT CURRENT_TIMESTAMP
+        )"
+    ];
+    foreach ($sql as $q) { $pdo->exec($q); }
 }
 
 function seed_catalogs_if_empty(PDO $pdo, string $userId) {
@@ -68,7 +97,8 @@ function seed_catalogs_if_empty(PDO $pdo, string $userId) {
   $stmtS = $pdo->prepare("INSERT INTO subcategories (id,user_id,category_id,name) VALUES (:id,:uid,:category_id,:name)");
   $stmtS->execute([':id'=>'sub_exp_insumos_mat',':uid'=>$userId,':category_id'=>'cat_exp_insumos',':name'=>'Matéria-Prima']);
   $stmtS->execute([':id'=>'sub_exp_mark_ads',':uid'=>$userId,':category_id'=>'cat_exp_marketing',':name'=>'Anúncios']);
-  $pdo->prepare("INSERT INTO accounts (id,user_id,name) VALUES ('acc_main',:uid,'Conta Principal')")->execute([':uid'=>$userId]);
+  // Seed default account as the initial default for the user
+  $pdo->prepare("INSERT INTO accounts (id,user_id,name,is_default) VALUES ('acc_main',:uid,'Conta Principal', TRUE)")->execute([':uid'=>$userId]);
   $pdo->prepare("INSERT INTO cost_centers (id,user_id,name) VALUES ('cc_geral',:uid,'Geral'),('cc_loja',:uid,'Loja')")->execute([':uid'=>$userId]);
   $pdo->prepare("INSERT INTO payment_methods (id,user_id,name) VALUES ('pm_pix',:uid,'PIX'),('pm_cash',:uid,'Dinheiro'),('pm_card',:uid,'Cartão (Maquininha)')")->execute([':uid'=>$userId]);
   $stmtF = $pdo->prepare("INSERT INTO fees (id,user_id,payment_method_id,name,percent) VALUES (:id,:uid,:pm,:name,:percent)");
