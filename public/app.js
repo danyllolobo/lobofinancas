@@ -265,7 +265,11 @@ async function apiCatalogs() {
     };
     return { success: true, catalogs };
   }
-  const res = await fetch('/api/catalogs.php');
+  const url = new URL('/api/catalogs.php', window.location.origin);
+  if (state.currentCompanyId) {
+    url.searchParams.set('company_id', state.currentCompanyId);
+  }
+  const res = await fetch(url.toString());
   const text = await res.text();
   try { return JSON.parse(text); }
   catch(e) { console.error('Catalogs API resposta não-JSON:', text); return { success: false, message: 'Resposta inválida da API de catálogos.' }; }
@@ -312,9 +316,14 @@ async function apiCatalogsCRUD(entity, action, payload) {
     return { success: false };
   }
   const method = action === 'list' ? 'GET' : (action === 'create' ? 'POST' : (action === 'update' ? 'PUT' : 'DELETE'));
+  const companyId = state.currentCompanyId;
   let url = new URL('/api/catalogs.php', window.location.origin);
   url.searchParams.set('entity', entity);
-  const res = await fetch(url.toString(), { method, headers: { 'Content-Type': 'application/json' }, body: method==='GET' ? null : JSON.stringify(payload || {}) });
+  if (method === 'GET' && companyId) {
+    url.searchParams.set('company_id', companyId);
+  }
+  const body = method==='GET' ? null : JSON.stringify({ ...(payload || {}), company_id: companyId });
+  const res = await fetch(url.toString(), { method, headers: { 'Content-Type': 'application/json' }, body });
   return res.json();
 }
 
@@ -539,6 +548,7 @@ function populateCompanySelect() {
   sel.innerHTML = state.companies.map(c => `<option value="${c.id}" ${c.id===state.currentCompanyId?'selected':''}>${c.name}</option>`).join('');
   sel.addEventListener('change', async () => {
     state.currentCompanyId = sel.value;
+    await loadCatalogs();
     // Atualiza a view atual conforme a rota ativa
     if (state.route === 'dashboard') {
       await refreshDashboard();
@@ -546,6 +556,8 @@ function populateCompanySelect() {
       await refreshTransactions();
     } else if (state.route === 'accounts') {
       await refreshAccounts();
+    } else if (state.route === 'catalogs') {
+      await refreshCatalogLists();
     }
   });
 }
@@ -617,6 +629,7 @@ async function selectCompany(id) {
   // Atualiza select do header
   const sel = qs('#company-select');
   if (sel) sel.value = id;
+  await loadCatalogs();
   // Atualiza telas conforme rota
   if (state.route === 'dashboard') {
     await refreshDashboard();
@@ -624,6 +637,8 @@ async function selectCompany(id) {
     await refreshTransactions();
   } else if (state.route === 'accounts') {
     await refreshAccounts();
+  } else if (state.route === 'catalogs') {
+    await refreshCatalogLists();
   }
   // Re-render da lista
   renderCompaniesList(state.companies);

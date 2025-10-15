@@ -92,6 +92,23 @@ function ensure_schema(PDO $pdo) {
         error_log('ensure_schema avatar_url add column failed: ' . $e->getMessage());
     }
 
+    // Adiciona company_id nas tabelas de catálogos, se não existir (migração suave)
+    $catalogTables = [
+        'categories', 'subcategories', 'cost_centers', 'accounts', 'payment_methods', 'fees'
+    ];
+    foreach ($catalogTables as $table) {
+        try {
+            $chk = $pdo->prepare("SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = :tbl AND column_name = 'company_id' LIMIT 1");
+            $chk->execute([':tbl' => $table]);
+            $exists = $chk->fetchColumn();
+            if (!$exists) {
+                $pdo->exec("ALTER TABLE {$table} ADD COLUMN company_id TEXT");
+            }
+        } catch (Throwable $e) {
+            error_log("ensure_schema add company_id to {$table} failed: " . $e->getMessage());
+        }
+    }
+
     // Compatibiliza esquemas antigos da tabela accounts que não tinham initial_balance/is_default
     try {
         $chk = $pdo->prepare("SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'accounts' AND column_name = 'initial_balance' LIMIT 1");
@@ -171,4 +188,60 @@ function seed_catalogs_if_empty(PDO $pdo, string $userId) {
   $feeStmt->execute([':id' => uniqid('fee_'), ':uid' => $userId, ':pm' => $pmCardId, ':name' => 'Débito — 2%',    ':percent' => 0.02]);
   $feeStmt->execute([':id' => uniqid('fee_'), ':uid' => $userId, ':pm' => $pmCardId, ':name' => 'Crédito — 3.5%', ':percent' => 0.035]);
   $feeStmt->execute([':id' => uniqid('fee_'), ':uid' => $userId, ':pm' => $pmCardId, ':name' => 'Parcelado — 5%', ':percent' => 0.05]);
+}
+
+// Nova função: semear catálogos padrão por empresa quando não houver dados
+function seed_catalogs_for_company_if_empty(PDO $pdo, string $userId, string $companyId) {
+  // Verifica se já existem categorias para este usuário nesta empresa
+  $hasCatStmt = $pdo->prepare("SELECT 1 FROM categories WHERE user_id = :uid AND company_id = :cid LIMIT 1");
+  $hasCatStmt->execute([':uid' => $userId, ':cid' => $companyId]);
+  $hasCat = $hasCatStmt->fetchColumn();
+  if ($hasCat) return;
+
+  // Categorias padrão
+  $categoriesDef = [
+    ['name' => 'Vendas',      'type' => 'income'],
+    ['name' => 'Serviços',    'type' => 'income'],
+    ['name' => 'Insumos',     'type' => 'expense'],
+    ['name' => 'Marketing',   'type' => 'expense'],
+    ['name' => 'Operacional', 'type' => 'expense'],
+    ['name' => 'Impostos',    'type' => 'expense'],
+  ];
+  $catStmt = $pdo->prepare("INSERT INTO categories (id,user_id,company_id,name,type) VALUES (:id,:uid,:cid,:name,:type)");
+  $catIds = [];
+  foreach ($categoriesDef as $c) {
+    $id = uniqid('cat_');
+    $catStmt->execute([':id' => $id, ':uid' => $userId, ':cid' => $companyId, ':name' => $c['name'], ':type' => $c['type']]);
+    $catIds[$c['name']] = $id;
+  }
+
+  // Subcategorias padrão
+  $subStmt = $pdo->prepare("INSERT INTO subcategories (id,user_id,company_id,category_id,name) VALUES (:id,:uid,:cid,:category_id,:name)");
+  if (!empty($catIds['Insumos'])) {
+    $subStmt->execute([':id' => uniqid('sub_'), ':uid' => $userId, ':cid' => $companyId, ':category_id' => $catIds['Insumos'], ':name' => 'Matéria-Prima']);
+  }
+  if (!empty($catIds['Marketing'])) {
+    $subStmt->execute([':id' => uniqid('sub_'), ':uid' => $userId, ':cid' => $companyId, ':category_id' => $catIds['Marketing'], ':name' => 'Anúncios']);
+  }
+
+  // Conta padrão por empresa
+  $accStmt = $pdo->prepare("INSERT INTO accounts (id,user_id,company_id,name,initial_balance,is_default) VALUES (:id,:uid,:cid,:name,:initial_balance,TRUE)");
+  $accStmt->execute([':id' => uniqid('acc_'), ':uid' => $userId, ':cid' => $companyId, ':name' => 'Conta Principal', ':initial_balance' => 0]);
+
+  // Centros de custo
+  $ccStmt = $pdo->prepare("INSERT INTO cost_centers (id,user_id,company_id,name) VALUES (:id,:uid,:cid,:name)");
+  $ccStmt->execute([':id' => uniqid('cc_'), ':uid' => $userId, ':cid' => $companyId, ':name' => 'Geral']);
+  $ccStmt->execute([':id' => uniqid('cc_'), ':uid' => $userId, ':cid' => $companyId, ':name' => 'Loja']);
+
+  // Formas de pagamento por empresa
+  $pmStmt = $pdo->prepare("INSERT INTO payment_methods (id,user_id,company_id,name) VALUES (:id,:uid,:cid,:name)");
+  $pmPixId  = uniqid('pm_'); $pmStmt->execute([':id' => $pmPixId,  ':uid' => $userId, ':cid' => $companyId, ':name' => 'PIX']);
+  $pmCashId = uniqid('pm_'); $pmStmt->execute([':id' => $pmCashId, ':uid' => $userId, ':cid' => $companyId, ':name' => 'Dinheiro']);
+  $pmCardId = uniqid('pm_'); $pmStmt->execute([':id' => $pmCardId, ':uid' => $userId, ':cid' => $companyId, ':name' => 'Cartão (Maquininha)']);
+
+  // Taxas padrão associadas ao método Cartão
+  $feeStmt = $pdo->prepare("INSERT INTO fees (id,user_id,company_id,payment_method_id,name,percent) VALUES (:id,:uid,:cid,:pm,:name,:percent)");
+  $feeStmt->execute([':id' => uniqid('fee_'), ':uid' => $userId, ':cid' => $companyId, ':pm' => $pmCardId, ':name' => 'Débito — 2%',    ':percent' => 0.02]);
+  $feeStmt->execute([':id' => uniqid('fee_'), ':uid' => $userId, ':cid' => $companyId, ':pm' => $pmCardId, ':name' => 'Crédito — 3.5%', ':percent' => 0.035]);
+  $feeStmt->execute([':id' => uniqid('fee_'), ':uid' => $userId, ':cid' => $companyId, ':pm' => $pmCardId, ':name' => 'Parcelado — 5%', ':percent' => 0.05]);
 }

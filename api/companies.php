@@ -28,6 +28,12 @@ try {
     $id = uniqid('cmp_');
     $pdo->prepare('INSERT INTO companies (id, user_id, name) VALUES (:id,:uid,:name)')
         ->execute([':id'=>$id, ':uid'=>$userId, ':name'=>$name]);
+    // Semear catálogos padrão para a nova empresa
+    try {
+      seed_catalogs_for_company_if_empty($pdo, $userId, $id);
+    } catch (Throwable $e) {
+      error_log('Falha ao semear catálogos por empresa: '.$e->getMessage());
+    }
     $stmt = $pdo->prepare('SELECT id, name FROM companies WHERE user_id = :uid ORDER BY name');
     $stmt->execute([':uid' => $userId]);
     $items = $stmt->fetchAll();
