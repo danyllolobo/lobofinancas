@@ -118,7 +118,7 @@ function setRoute(route) {
   const link = document.querySelector(`a[href="#${route}"]`);
   if (link) link.classList.add('active');
   qs('#page-title').textContent = route.charAt(0).toUpperCase() + route.slice(1);
-  ['dashboard','transactions','reports','accounts','catalogs','profile'].forEach((r) => {
+  ['dashboard','transactions','reports','accounts','catalogs','companies','profile'].forEach((r) => {
     qs(`#view-${r}`).classList.toggle('hidden', r !== route);
   });
   if (route === 'dashboard') {
@@ -135,6 +135,9 @@ function setRoute(route) {
   }
   if (route === 'catalogs') {
     initCatalogs();
+  }
+  if (route === 'companies') {
+    initCompanies();
   }
   if (route === 'profile') {
     initProfile();
@@ -547,6 +550,85 @@ function populateCompanySelect() {
   });
 }
 
+// =====================
+// Companies screen
+// =====================
+function initCompanies() {
+  // Lista inicial
+  refreshCompanies();
+  // Bind do formulário de criação
+  const form = qs('#form-company-manage');
+  if (form && !form._bound) {
+    form._bound = true;
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const name = (form.querySelector('[name="name"]').value || '').trim();
+      if (!name) { alert('Informe o nome da empresa'); return; }
+      const res = await apiCompanies('create', { name });
+      if (!res.success) { alert(res.message || 'Falha ao criar empresa'); return; }
+      await refreshCompanies();
+      form.reset();
+    });
+  }
+}
+
+async function refreshCompanies() {
+  const res = await apiCompanies('list');
+  if (res?.items) {
+    state.companies = res.items;
+    if (!state.currentCompanyId && state.companies.length) {
+      state.currentCompanyId = state.companies[0].id;
+    }
+  }
+  renderCompaniesList(state.companies);
+  populateCompanySelect();
+}
+
+function renderCompaniesList(items) {
+  const list = qs('#companies-list');
+  if (!list) return;
+  if (!items || !items.length) {
+    list.innerHTML = '<li class="text-sm text-slate-600 dark:text-slate-300">Nenhuma empresa cadastrada ainda.</li>';
+    return;
+  }
+  list.innerHTML = items.map((c) => {
+    const active = c.id === state.currentCompanyId;
+    return `<li class="flex items-center justify-between p-2 rounded-lg bg-slate-50 dark:bg-slate-800">
+      <div class="flex items-center gap-2">
+        <span class="font-medium">${c.name}</span>
+        ${active ? '<span class="pill pill-green">Ativa</span>' : ''}
+      </div>
+      <div>
+        ${active ? '<button class="btn-secondary" disabled>Selecionada</button>' : `<button class="btn-primary" data-act-select="${c.id}">Selecionar</button>`}
+      </div>
+    </li>`;
+  }).join('');
+  // Bind nos botões de seleção
+  qsa('[data-act-select]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-act-select');
+      await selectCompany(id);
+    });
+  });
+}
+
+async function selectCompany(id) {
+  state.currentCompanyId = id;
+  // Atualiza select do header
+  const sel = qs('#company-select');
+  if (sel) sel.value = id;
+  // Atualiza telas conforme rota
+  if (state.route === 'dashboard') {
+    await refreshDashboard();
+  } else if (state.route === 'transactions') {
+    await refreshTransactions();
+  } else if (state.route === 'accounts') {
+    await refreshAccounts();
+  }
+  // Re-render da lista
+  renderCompaniesList(state.companies);
+}
+
 async function loadCatalogs() {
   const res = await apiCatalogs();
   if (res.success) {
@@ -594,7 +676,30 @@ function populateModalFromCatalogs() {
 
 function initHeader() {
   qs('#theme-toggle').addEventListener('click', toggleTheme);
-  qs('#profile-btn').textContent = (state.user?.name?.[0] || state.user?.email?.[0] || 'U').toUpperCase();
+  // Aplica avatar centrado, se existir; caso contrário, inicial
+  const applyAvatar = () => {
+    const btn = qs('#profile-btn');
+    if (!btn) return;
+    const url = state.user?.avatar_url;
+    if (url) {
+      btn.classList.add('avatar-btn');
+      btn.style.backgroundImage = `url(${url})`;
+      btn.textContent = '';
+    } else {
+      btn.classList.remove('avatar-btn');
+      btn.style.backgroundImage = '';
+      btn.textContent = (state.user?.name?.[0] || state.user?.email?.[0] || 'U').toUpperCase();
+    }
+  };
+  applyAvatar();
+  // Carrega avatar_url atual do perfil para refletir no header
+  (async () => {
+    const prof = await apiProfile('get');
+    if (prof?.user) {
+      state.user = { ...(state.user || {}), ...prof.user };
+      applyAvatar();
+    }
+  })();
   qs('#profile-btn').addEventListener('click', () => {
     qs('#profile-menu').classList.toggle('hidden');
   });
@@ -1765,8 +1870,13 @@ async function initProfile() {
       const res = await apiProfile('update-basic', data);
       if (!res.success) { alert(res.message || 'Falha ao salvar perfil'); return; }
       state.user = { ...(state.user || {}), name: data.name, email: data.email };
-      // Atualiza inicial do botão de perfil
-      const btn = qs('#profile-btn'); if (btn) btn.textContent = (state.user?.name?.[0] || state.user?.email?.[0] || 'U').toUpperCase();
+      // Atualiza header (sem avatar)
+      const btn = qs('#profile-btn');
+      if (btn) {
+        btn.classList.remove('avatar-btn');
+        btn.style.backgroundImage = '';
+        btn.textContent = (state.user?.name?.[0] || state.user?.email?.[0] || 'U').toUpperCase();
+      }
       alert('Perfil atualizado com sucesso');
     });
   }
@@ -1788,6 +1898,14 @@ async function initProfile() {
       const res = await apiProfile('upload-avatar', fd);
       if (!res.success) { alert(res.message || 'Falha ao enviar avatar'); return; }
       if (avatarEl) avatarEl.src = res.avatar_url || '';
+      // Atualiza header com avatar centrado
+      state.user = { ...(state.user || {}), avatar_url: res.avatar_url };
+      const btn = qs('#profile-btn');
+      if (btn) {
+        btn.classList.add('avatar-btn');
+        btn.style.backgroundImage = `url(${res.avatar_url})`;
+        btn.textContent = '';
+      }
       alert('Foto atualizada com sucesso');
     });
   }

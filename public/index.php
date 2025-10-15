@@ -95,6 +95,7 @@
             <a href="#transactions" class="nav-link">Transações</a>
             <a href="#reports" class="nav-link">Relatórios</a>
             <a href="#accounts" class="nav-link">Contas</a>
+            <a href="#companies" class="nav-link">Empresas</a>
             <a href="#catalogs" class="nav-link">Cadastros</a>
           </nav>
         </aside>
@@ -473,6 +474,17 @@
               <!-- Fees -->
               <div id="tab-fees" class="tab-panel card space-y-3 hidden">
                 <div id="cards-machines" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
+              </div>
+            </section>
+            <!-- Companies -->
+            <section id="view-companies" class="hidden space-y-4">
+              <div class="card space-y-3">
+                <h3 class="text-sm font-semibold">Empresas</h3>
+                <form id="form-company-manage" class="grid grid-cols-1 md:grid-cols-3 gap-3">
+                  <input type="text" name="name" placeholder="Nome da Empresa" class="input md:col-span-2" required />
+                  <button type="submit" class="btn-primary">Adicionar</button>
+                </form>
+                <ul id="companies-list" class="space-y-2"></ul>
               </div>
             </section>
             <!-- Profile -->
