@@ -475,6 +475,63 @@
                 <div id="cards-machines" class="grid grid-cols-1 md:grid-cols-2 gap-4"></div>
               </div>
             </section>
+            <!-- Profile -->
+            <section id="view-profile" class="hidden space-y-4">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Dados Básicos -->
+                <div class="card space-y-3">
+                  <h3 class="text-sm font-semibold">Dados Básicos</h3>
+                  <form id="form-profile-basic" class="grid grid-cols-1 gap-3">
+                    <input type="text" name="name" id="profile-name" placeholder="Nome" class="input" required />
+                    <input type="email" name="email" id="profile-email" placeholder="Email" class="input" required />
+                    <div class="flex justify-end">
+                      <button type="submit" class="btn-primary">Salvar</button>
+                    </div>
+                  </form>
+                </div>
+
+                <!-- Foto do Perfil -->
+                <div class="card space-y-3">
+                  <h3 class="text-sm font-semibold">Foto do Perfil</h3>
+                  <div class="flex items-center gap-3">
+                    <img id="profile-avatar" src="" alt="Avatar" class="w-16 h-16 rounded-full bg-slate-200 dark:bg-slate-700 object-cover" />
+                    <form id="form-profile-avatar" class="flex-1">
+                      <input type="file" name="avatar" id="profile-avatar-file" accept="image/*" class="hidden" />
+                      <div class="flex gap-2">
+                        <button type="button" id="btn-avatar-select" class="btn-secondary">Selecionar Foto</button>
+                        <button type="submit" class="btn-primary">Enviar</button>
+                      </div>
+                    </form>
+                  </div>
+                  <p class="text-xs text-slate-500 dark:text-slate-300">Formatos suportados: JPG e PNG.</p>
+                </div>
+
+                <!-- Alterar Senha -->
+                <div class="card space-y-3">
+                  <h3 class="text-sm font-semibold">Alterar Senha</h3>
+                  <form id="form-profile-password" class="grid grid-cols-1 gap-3">
+                    <input type="password" name="current_password" id="profile-pwd-current" placeholder="Senha atual" class="input" required />
+                    <input type="password" name="new_password" id="profile-pwd-new" placeholder="Nova senha" class="input" required />
+                    <input type="password" id="profile-pwd-confirm" placeholder="Confirmar nova senha" class="input" required />
+                    <div class="flex justify-end">
+                      <button type="submit" class="btn-primary">Salvar</button>
+                    </div>
+                  </form>
+                </div>
+
+                <!-- Excluir Conta -->
+                <div class="card space-y-3">
+                  <h3 class="text-sm font-semibold text-expense">Excluir Conta</h3>
+                  <p class="text-sm text-slate-600 dark:text-slate-300">Esta ação é irreversível e removerá todos os seus dados. Para confirmar, digite <strong>DELETAR</strong> abaixo e clique em Excluir.</p>
+                  <form id="form-profile-delete" class="space-y-3">
+                    <input type="text" id="delete-confirm" class="input" placeholder="Digite DELETAR para confirmar" />
+                    <div class="flex justify-end">
+                      <button type="submit" id="btn-delete-account" class="btn-danger" disabled>Excluir</button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            </section>
           </div>
         </main>
       </div>

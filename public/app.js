@@ -118,7 +118,7 @@ function setRoute(route) {
   const link = document.querySelector(`a[href="#${route}"]`);
   if (link) link.classList.add('active');
   qs('#page-title').textContent = route.charAt(0).toUpperCase() + route.slice(1);
-  ['dashboard','transactions','reports','accounts','catalogs'].forEach((r) => {
+  ['dashboard','transactions','reports','accounts','catalogs','profile'].forEach((r) => {
     qs(`#view-${r}`).classList.toggle('hidden', r !== route);
   });
   if (route === 'dashboard') {
@@ -135,6 +135,9 @@ function setRoute(route) {
   }
   if (route === 'catalogs') {
     initCatalogs();
+  }
+  if (route === 'profile') {
+    initProfile();
   }
 }
 
@@ -182,6 +185,44 @@ async function apiCompanies(action, payload) {
   const text = await res.text();
   try { return JSON.parse(text); }
   catch(e) { console.error('Companies API resposta não-JSON:', text); return { success: false, message: 'Resposta inválida da API de empresas.' }; }
+}
+
+// Profile API
+async function apiProfile(action, payload, options) {
+  if (DEV) {
+    if (action === 'get') {
+      return { success: true, user: { id: state.user?.id || 'devuser', name: state.user?.name || 'Usuário Dev', email: state.user?.email || 'dev@example.com', avatar_url: '' } };
+    }
+    if (action === 'update-basic') { return { success: true }; }
+    if (action === 'change-password') { return { success: true }; }
+    if (action === 'upload-avatar') { return { success: true, avatar_url: '' }; }
+    if (action === 'delete-account') { return { success: true }; }
+    return { success: false };
+  }
+  const methodMap = {
+    'get': 'GET',
+    'update-basic': 'PUT',
+    'change-password': 'PUT',
+    'upload-avatar': 'POST',
+    'delete-account': 'DELETE',
+  };
+  const method = methodMap[action] || 'POST';
+  const url = new URL('/api/profile.php', window.location.origin);
+  url.searchParams.set('action', action);
+  const opts = options || {};
+  let body = null; let headers = {};
+  if (action === 'upload-avatar' && payload instanceof FormData) {
+    body = payload; // deixar o browser definir o Content-Type
+  } else if (method === 'GET') {
+    body = null;
+  } else {
+    headers['Content-Type'] = 'application/json';
+    body = JSON.stringify(payload || {});
+  }
+  const res = await fetch(url.toString(), { method, headers, body, ...opts });
+  const text = await res.text();
+  try { return JSON.parse(text); }
+  catch(e) { console.error('Profile API resposta não-JSON:', text); return { success: false, message: 'Resposta inválida da API de perfil.' }; }
 }
 
 async function apiDashboard(params) {
@@ -557,6 +598,14 @@ function initHeader() {
   qs('#profile-btn').addEventListener('click', () => {
     qs('#profile-menu').classList.toggle('hidden');
   });
+  const editProfileBtn = qs('#edit-profile');
+  if (editProfileBtn && !editProfileBtn._bound) {
+    editProfileBtn._bound = true;
+    editProfileBtn.addEventListener('click', () => {
+      setRoute('profile');
+      qs('#profile-menu').classList.add('hidden');
+    });
+  }
   qs('#logout').addEventListener('click', async () => {
     await apiAuth('logout', {});
     state.user = null;
@@ -1690,6 +1739,100 @@ function initReports() {
   if (btnExcel && !btnExcel._bound) { btnExcel._bound = true; btnExcel.addEventListener('click', exportReportCSV); }
 
   showReportEmpty();
+}
+
+// =====================
+// Profile screen
+// =====================
+async function initProfile() {
+  // Carrega dados atuais
+  const prof = await apiProfile('get');
+  const u = prof.user || state.user || {};
+  const nameEl = qs('#profile-name');
+  const emailEl = qs('#profile-email');
+  const avatarEl = qs('#profile-avatar');
+  if (nameEl) nameEl.value = u.name || '';
+  if (emailEl) emailEl.value = u.email || '';
+  if (avatarEl) avatarEl.src = u.avatar_url || '';
+
+  // Basic form
+  const formBasic = qs('#form-profile-basic');
+  if (formBasic && !formBasic._bound) {
+    formBasic._bound = true;
+    formBasic.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const data = { name: nameEl.value.trim(), email: emailEl.value.trim().toLowerCase() };
+      const res = await apiProfile('update-basic', data);
+      if (!res.success) { alert(res.message || 'Falha ao salvar perfil'); return; }
+      state.user = { ...(state.user || {}), name: data.name, email: data.email };
+      // Atualiza inicial do botão de perfil
+      const btn = qs('#profile-btn'); if (btn) btn.textContent = (state.user?.name?.[0] || state.user?.email?.[0] || 'U').toUpperCase();
+      alert('Perfil atualizado com sucesso');
+    });
+  }
+
+  // Avatar upload
+  const formAvatar = qs('#form-profile-avatar');
+  const fileInput = qs('#profile-avatar-file');
+  const btnSelect = qs('#btn-avatar-select');
+  if (btnSelect && !btnSelect._bound) {
+    btnSelect._bound = true;
+    btnSelect.addEventListener('click', () => fileInput && fileInput.click());
+  }
+  if (formAvatar && !formAvatar._bound) {
+    formAvatar._bound = true;
+    formAvatar.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      if (!fileInput || !fileInput.files || !fileInput.files[0]) { alert('Selecione uma imagem'); return; }
+      const fd = new FormData(); fd.append('avatar', fileInput.files[0]);
+      const res = await apiProfile('upload-avatar', fd);
+      if (!res.success) { alert(res.message || 'Falha ao enviar avatar'); return; }
+      if (avatarEl) avatarEl.src = res.avatar_url || '';
+      alert('Foto atualizada com sucesso');
+    });
+  }
+
+  // Alterar senha
+  const formPwd = qs('#form-profile-password');
+  const pwdCurrent = qs('#profile-pwd-current');
+  const pwdNew = qs('#profile-pwd-new');
+  const pwdConfirm = qs('#profile-pwd-confirm');
+  if (formPwd && !formPwd._bound) {
+    formPwd._bound = true;
+    formPwd.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const n = pwdNew.value || ''; const c = pwdConfirm.value || '';
+      if (n.length < 6) { alert('A nova senha deve ter pelo menos 6 caracteres'); return; }
+      if (n !== c) { alert('Confirmação de senha não confere'); return; }
+      const res = await apiProfile('change-password', { current_password: pwdCurrent.value || '', new_password: n });
+      if (!res.success) { alert(res.message || 'Falha ao alterar senha'); return; }
+      // Limpa campos
+      pwdCurrent.value = ''; pwdNew.value = ''; pwdConfirm.value = '';
+      alert('Senha alterada com sucesso');
+    });
+  }
+
+  // Excluir conta
+  const formDel = qs('#form-profile-delete');
+  const delInput = qs('#delete-confirm');
+  const btnDel = qs('#btn-delete-account');
+  if (delInput && !delInput._bound) {
+    delInput._bound = true;
+    delInput.addEventListener('input', () => {
+      if (btnDel) btnDel.disabled = (delInput.value.trim().toUpperCase() !== 'DELETAR');
+    });
+  }
+  if (formDel && !formDel._bound) {
+    formDel._bound = true;
+    formDel.addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const res = await apiProfile('delete-account', { confirm: delInput.value || '' });
+      if (!res.success) { alert(res.message || 'Falha ao excluir conta'); return; }
+      alert('Conta excluída. Até breve!');
+      // Redireciona para login
+      show('#auth-view');
+    });
+  }
 }
 
 function showReportEmpty() {

@@ -78,31 +78,97 @@ function ensure_schema(PDO $pdo) {
         )"
     ];
     foreach ($sql as $q) { $pdo->exec($q); }
+    // Campos opcionais/novos: avatar_url
+    // Compatível com versões que não aceitam ALTER TABLE IF NOT EXISTS
+    try {
+        $chk = $pdo->prepare("SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'avatar_url' LIMIT 1");
+        $chk->execute();
+        $exists = $chk->fetchColumn();
+        if (!$exists) {
+            $pdo->exec("ALTER TABLE users ADD COLUMN avatar_url TEXT");
+        }
+    } catch (Throwable $e) {
+        // Se falhar por qualquer motivo, apenas loga sem quebrar o fluxo
+        error_log('ensure_schema avatar_url add column failed: ' . $e->getMessage());
+    }
+
+    // Compatibiliza esquemas antigos da tabela accounts que não tinham initial_balance/is_default
+    try {
+        $chk = $pdo->prepare("SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'accounts' AND column_name = 'initial_balance' LIMIT 1");
+        $chk->execute();
+        $exists = $chk->fetchColumn();
+        if (!$exists) {
+            $pdo->exec("ALTER TABLE accounts ADD COLUMN initial_balance NUMERIC DEFAULT 0");
+            // Normaliza linhas existentes
+            $pdo->exec("UPDATE accounts SET initial_balance = 0 WHERE initial_balance IS NULL");
+        }
+    } catch (Throwable $e) {
+        error_log('ensure_schema accounts add initial_balance failed: ' . $e->getMessage());
+    }
+    try {
+        $chk2 = $pdo->prepare("SELECT 1 FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'accounts' AND column_name = 'is_default' LIMIT 1");
+        $chk2->execute();
+        $exists2 = $chk2->fetchColumn();
+        if (!$exists2) {
+            $pdo->exec("ALTER TABLE accounts ADD COLUMN is_default BOOLEAN DEFAULT FALSE");
+            $pdo->exec("UPDATE accounts SET is_default = FALSE WHERE is_default IS NULL");
+        }
+    } catch (Throwable $e) {
+        error_log('ensure_schema accounts add is_default failed: ' . $e->getMessage());
+    }
 }
 
 function seed_catalogs_if_empty(PDO $pdo, string $userId) {
-  $hasCat = $pdo->query("SELECT 1 FROM categories WHERE user_id = '{$userId}' LIMIT 1")->fetchColumn();
-  if ($hasCat) return; // já possui dados
-  // Seed padrão
-  $cats = [
-    ['id'=>'cat_inc_vendas','name'=>'Vendas','type'=>'income'],
-    ['id'=>'cat_inc_servicos','name'=>'Serviços','type'=>'income'],
-    ['id'=>'cat_exp_insumos','name'=>'Insumos','type'=>'expense'],
-    ['id'=>'cat_exp_marketing','name'=>'Marketing','type'=>'expense'],
-    ['id'=>'cat_exp_operacional','name'=>'Operacional','type'=>'expense'],
-    ['id'=>'cat_exp_impostos','name'=>'Impostos','type'=>'expense'],
+  // Usa statement preparado para evitar SQL inline e injecção
+  $hasCatStmt = $pdo->prepare("SELECT 1 FROM categories WHERE user_id = :uid LIMIT 1");
+  $hasCatStmt->execute([':uid' => $userId]);
+  $hasCat = $hasCatStmt->fetchColumn();
+  if ($hasCat) return; // já possui dados para este usuário
+
+  // Categorias padrão, com IDs únicos por usuário
+  $categoriesDef = [
+    ['name' => 'Vendas',      'type' => 'income'],
+    ['name' => 'Serviços',    'type' => 'income'],
+    ['name' => 'Insumos',     'type' => 'expense'],
+    ['name' => 'Marketing',   'type' => 'expense'],
+    ['name' => 'Operacional', 'type' => 'expense'],
+    ['name' => 'Impostos',    'type' => 'expense'],
   ];
-  $stmt = $pdo->prepare("INSERT INTO categories (id,user_id,name,type) VALUES (:id,:uid,:name,:type)");
-  foreach ($cats as $c) { $stmt->execute([':id'=>$c['id'],':uid'=>$userId,':name'=>$c['name'],':type'=>$c['type']]); }
-  $stmtS = $pdo->prepare("INSERT INTO subcategories (id,user_id,category_id,name) VALUES (:id,:uid,:category_id,:name)");
-  $stmtS->execute([':id'=>'sub_exp_insumos_mat',':uid'=>$userId,':category_id'=>'cat_exp_insumos',':name'=>'Matéria-Prima']);
-  $stmtS->execute([':id'=>'sub_exp_mark_ads',':uid'=>$userId,':category_id'=>'cat_exp_marketing',':name'=>'Anúncios']);
-  // Seed default account as the initial default for the user
-  $pdo->prepare("INSERT INTO accounts (id,user_id,name,is_default) VALUES ('acc_main',:uid,'Conta Principal', TRUE)")->execute([':uid'=>$userId]);
-  $pdo->prepare("INSERT INTO cost_centers (id,user_id,name) VALUES ('cc_geral',:uid,'Geral'),('cc_loja',:uid,'Loja')")->execute([':uid'=>$userId]);
-  $pdo->prepare("INSERT INTO payment_methods (id,user_id,name) VALUES ('pm_pix',:uid,'PIX'),('pm_cash',:uid,'Dinheiro'),('pm_card',:uid,'Cartão (Maquininha)')")->execute([':uid'=>$userId]);
-  $stmtF = $pdo->prepare("INSERT INTO fees (id,user_id,payment_method_id,name,percent) VALUES (:id,:uid,:pm,:name,:percent)");
-  $stmtF->execute([':id'=>'fee_debito',':uid'=>$userId,':pm'=>'pm_card',':name'=>'Débito — 2%',':percent'=>0.02]);
-  $stmtF->execute([':id'=>'fee_credito',':uid'=>$userId,':pm'=>'pm_card',':name'=>'Crédito — 3.5%',':percent'=>0.035]);
-  $stmtF->execute([':id'=>'fee_parcelado',':uid'=>$userId,':pm'=>'pm_card',':name'=>'Parcelado — 5%',':percent'=>0.05]);
+  $catStmt = $pdo->prepare("INSERT INTO categories (id,user_id,name,type) VALUES (:id,:uid,:name,:type)");
+  $catIds = [];
+  foreach ($categoriesDef as $c) {
+    $id = uniqid('cat_');
+    $catStmt->execute([':id' => $id, ':uid' => $userId, ':name' => $c['name'], ':type' => $c['type']]);
+    $catIds[$c['name']] = $id;
+  }
+
+  // Subcategorias padrão (referenciam IDs das categorias acima)
+  $subStmt = $pdo->prepare("INSERT INTO subcategories (id,user_id,category_id,name) VALUES (:id,:uid,:category_id,:name)");
+  if (!empty($catIds['Insumos'])) {
+    $subStmt->execute([':id' => uniqid('sub_'), ':uid' => $userId, ':category_id' => $catIds['Insumos'], ':name' => 'Matéria-Prima']);
+  }
+  if (!empty($catIds['Marketing'])) {
+    $subStmt->execute([':id' => uniqid('sub_'), ':uid' => $userId, ':category_id' => $catIds['Marketing'], ':name' => 'Anúncios']);
+  }
+
+  // Conta padrão do usuário
+  $accStmt = $pdo->prepare("INSERT INTO accounts (id,user_id,name,initial_balance,is_default) VALUES (:id,:uid,:name,:initial_balance,TRUE)");
+  $accStmt->execute([':id' => uniqid('acc_'), ':uid' => $userId, ':name' => 'Conta Principal', ':initial_balance' => 0]);
+
+  // Centros de custo
+  $ccStmt = $pdo->prepare("INSERT INTO cost_centers (id,user_id,name) VALUES (:id,:uid,:name)");
+  $ccStmt->execute([':id' => uniqid('cc_'), ':uid' => $userId, ':name' => 'Geral']);
+  $ccStmt->execute([':id' => uniqid('cc_'), ':uid' => $userId, ':name' => 'Loja']);
+
+  // Formas de pagamento: PIX, Dinheiro, Cartão (Maquininha)
+  $pmStmt = $pdo->prepare("INSERT INTO payment_methods (id,user_id,name) VALUES (:id,:uid,:name)");
+  $pmPixId  = uniqid('pm_'); $pmStmt->execute([':id' => $pmPixId,  ':uid' => $userId, ':name' => 'PIX']);
+  $pmCashId = uniqid('pm_'); $pmStmt->execute([':id' => $pmCashId, ':uid' => $userId, ':name' => 'Dinheiro']);
+  $pmCardId = uniqid('pm_'); $pmStmt->execute([':id' => $pmCardId, ':uid' => $userId, ':name' => 'Cartão (Maquininha)']);
+
+  // Taxas padrão associadas ao método Cartão
+  $feeStmt = $pdo->prepare("INSERT INTO fees (id,user_id,payment_method_id,name,percent) VALUES (:id,:uid,:pm,:name,:percent)");
+  $feeStmt->execute([':id' => uniqid('fee_'), ':uid' => $userId, ':pm' => $pmCardId, ':name' => 'Débito — 2%',    ':percent' => 0.02]);
+  $feeStmt->execute([':id' => uniqid('fee_'), ':uid' => $userId, ':pm' => $pmCardId, ':name' => 'Crédito — 3.5%', ':percent' => 0.035]);
+  $feeStmt->execute([':id' => uniqid('fee_'), ':uid' => $userId, ':pm' => $pmCardId, ':name' => 'Parcelado — 5%', ':percent' => 0.05]);
 }
