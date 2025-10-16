@@ -30,8 +30,8 @@
         }
       }
     </script>
-    <?php $v = max(@filemtime(__DIR__.'/styles.css') ?: 0, @filemtime(__DIR__.'/app.js') ?: 0); ?>
-    <link rel="stylesheet" href="public/styles.css?v=<?php echo $v; ?>" />
+    
+    <link rel="stylesheet" href="public/styles.css>" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   </head>
   <body class="min-h-screen bg-lightbg text-slate-800 dark:bg-darkbg dark:text-darktext transition-colors duration-300">
@@ -607,6 +607,6 @@
       </div>
     </section>
 
-  <script src="public/app.js?v=<?php echo $v; ?>"></script>
+  <script src="public/app.js"></script>
   </body>
 </html>
