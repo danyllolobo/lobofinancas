@@ -114,6 +114,8 @@ function show(viewId) {
 
 function setRoute(route) {
   state.route = route;
+  try { localStorage.setItem('route', route); } catch (e) {}
+  if ((location.hash || '') !== ('#' + route)) { location.hash = '#' + route; }
   qsa('.nav-link').forEach((a) => a.classList.remove('active'));
   const link = document.querySelector(`a[href="#${route}"]`);
   if (link) link.classList.add('active');
@@ -345,11 +347,15 @@ async function apiTransactions(action, payloadOrParams) {
         // Categoria
         const okCat = (!category_id || category_id === 'todos' || t.category_id === category_id);
         // Ano/Mês
-        const okDate = (!year)
-          ? true
-          : (month === 'todos'
-              ? (t.date || '').startsWith(String(year))
-              : (t.date || '').startsWith(`${year}-${month}`));
+        let okDate = true;
+        const mm = String(month || '').padStart(2,'0');
+        if (year) {
+          okDate = (month === 'todos')
+            ? (t.date || '').startsWith(String(year))
+            : (t.date || '').startsWith(`${year}-${mm}`);
+        } else if (month && month !== 'todos') {
+          okDate = (t.date || '').slice(5,7) === mm;
+        }
         return okCompany && okStatus && okType && okCC && okCat && okDate;
       });
       return { success: true, items };
@@ -378,7 +384,7 @@ async function apiTransactions(action, payloadOrParams) {
   }
   if (action === 'list') {
     const url = new URL('/api/transactions.php', window.location.origin);
-    Object.entries(payloadOrParams || {}).forEach(([k,v])=> url.searchParams.set(k,v));
+    Object.entries(payloadOrParams || {}).forEach(([k,v])=> { if (v !== null && v !== undefined) url.searchParams.set(k,v); });
     const res = await fetch(url.toString());
     const text = await res.text();
     try { return JSON.parse(text); }
@@ -513,7 +519,10 @@ async function postLogin() {
     qs('#onboarding-name').textContent = state.user.name || state.user.email;
     show('#onboarding-view');
   } else {
-    state.currentCompanyId = state.companies[0].id;
+    const persistedCompanyId = localStorage.getItem('currentCompanyId');
+    const exists = persistedCompanyId && state.companies.some(c => String(c.id) === String(persistedCompanyId));
+    state.currentCompanyId = exists ? persistedCompanyId : state.companies[0].id;
+    try { localStorage.setItem('currentCompanyId', String(state.currentCompanyId)); } catch(e) {}
     await enterApp();
   }
 }
@@ -540,7 +549,12 @@ async function enterApp() {
   initHeader();
   await loadCatalogs();
   initDashboard();
-  setRoute('dashboard');
+  const allowedRoutes = ['dashboard','transactions','reports','accounts','catalogs','companies','profile'];
+  const storedRoute = (localStorage.getItem('route') || '').trim();
+  const hashRoute = (location.hash || '').replace('#','').trim();
+  let initialRoute = hashRoute || storedRoute || state.route;
+  if (!allowedRoutes.includes(initialRoute)) initialRoute = 'dashboard';
+  setRoute(initialRoute);
 }
 
 function populateCompanySelect() {
@@ -548,6 +562,7 @@ function populateCompanySelect() {
   sel.innerHTML = state.companies.map(c => `<option value="${c.id}" ${c.id===state.currentCompanyId?'selected':''}>${c.name}</option>`).join('');
   sel.addEventListener('change', async () => {
     state.currentCompanyId = sel.value;
+    try { localStorage.setItem('currentCompanyId', String(state.currentCompanyId)); } catch(e) {}
     await loadCatalogs();
     // Atualiza a view atual conforme a rota ativa
     if (state.route === 'dashboard') {
@@ -626,6 +641,7 @@ function renderCompaniesList(items) {
 
 async function selectCompany(id) {
   state.currentCompanyId = id;
+  try { localStorage.setItem('currentCompanyId', String(state.currentCompanyId)); } catch(e) {}
   // Atualiza select do header
   const sel = qs('#company-select');
   if (sel) sel.value = id;
@@ -746,6 +762,7 @@ function initHeader() {
     sidebar.classList.add('hidden');
   });
   qsa('.nav-link').forEach((a) => a.addEventListener('click', (e) => {
+    e.preventDefault();
     const hash = a.getAttribute('href').replace('#', '');
     setRoute(hash);
     // Fechar menu em mobile
@@ -755,6 +772,11 @@ function initHeader() {
       sidebar.classList.add('hidden');
     }
   }));
+  // Atualiza rota ao mudar hash diretamente
+  window.addEventListener('hashchange', () => {
+    const r = (location.hash || '').replace('#','') || state.route;
+    setRoute(r);
+  });
 }
 
 // Dashboard
@@ -907,8 +929,8 @@ function initTransactions() {
   const now = new Date();
   const years = [now.getFullYear()-1, now.getFullYear(), now.getFullYear()+1];
   if (yearSel && monthSel) {
-    yearSel.innerHTML = ['<option value="todos">Todos</option>'].concat(years.map(y=>`<option value="${y}">${y}</option>`)).join('');
-    monthSel.innerHTML = ['Todos','01','02','03','04','05','06','07','08','09','10','11','12'].map((m,i)=>`<option value="${i===0?'todos':m}">${i===0?'Todos':m}</option>`).join('');
+    yearSel.innerHTML = ['<option value="todos">Ano: Todos</option>'].concat(years.map(y=>`<option value="${y}">${y}</option>`)).join('');
+    monthSel.innerHTML = ['Todos','01','02','03','04','05','06','07','08','09','10','11','12'].map((m,i)=>`<option value="${i===0?'todos':m}">${i===0?'Todos os meses':m}</option>`).join('');
     // Seleciona "Todos" e mês "Todos" por padrão (mostrar todas as transações)
     yearSel.value = 'todos';
     monthSel.value = 'todos';
@@ -954,9 +976,13 @@ async function refreshTransactions() {
     cost_center: qs('#tx-filter-cc').value,
     category_id: qs('#tx-filter-category').value,
   };
-  // Envia ano/mês somente se ano != 'todos'
+  // Filtros de ano/mês:
+  // - Se ano != 'todos', envia ano e mês (mês pode ser 'todos')
+  // - Se ano == 'todos' e mês != 'todos', envia apenas mês (valendo para todos os anos)
   if (yearVal && yearVal !== 'todos') {
     params.year = yearVal;
+    params.month = monthVal;
+  } else if (monthVal && monthVal !== 'todos') {
     params.month = monthVal;
   }
   const data = await apiTransactions('list', params);
@@ -1193,8 +1219,27 @@ function openTxModal(arg) {
 
 
 // Boot
+async function checkAppVersion() {
+  try {
+    const res = await fetch('/api/version.php');
+    const text = await res.text();
+    let data;
+    try { data = JSON.parse(text); } catch (e) { data = null; }
+    const serverVer = String((data && data.version) || '');
+    const localVer = localStorage.getItem('appVersion') || '';
+    if (serverVer && serverVer !== localVer) {
+      try { localStorage.setItem('appVersion', serverVer); } catch (e) {}
+      const hash = location.hash || '';
+      // Reload to fetch new assets that carry ?v tokens
+      location.replace(location.pathname + hash);
+    }
+  } catch (e) {
+    console.warn('Falha ao verificar versão:', e);
+  }
+}
 async function boot() { // Transformada em async
     initTheme();
+    await checkAppVersion();
     bindAuthUI();
     bindOnboardingUI();
 

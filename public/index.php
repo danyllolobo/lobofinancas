@@ -30,7 +30,8 @@
         }
       }
     </script>
-    <link rel="stylesheet" href="public/styles.css" />
+    <?php $v = max(@filemtime(__DIR__.'/styles.css') ?: 0, @filemtime(__DIR__.'/app.js') ?: 0); ?>
+    <link rel="stylesheet" href="public/styles.css?v=<?php echo $v; ?>" />
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
   </head>
   <body class="min-h-screen bg-lightbg text-slate-800 dark:bg-darkbg dark:text-darktext transition-colors duration-300">
@@ -211,7 +212,7 @@
               <!-- Filtros -->
               <div class="grid grid-cols-1 md:grid-cols-6 gap-3 items-start">
                 <select id="tx-filter-status" class="select">
-                  <option value="todas">Todas</option>
+                  <option value="todas">Status: Todos</option>
                   <option value="realizado">Realizadas</option>
                   <option value="projetado">Projetadas</option>
                   <option value="income">Somente Receitas</option>
@@ -234,7 +235,7 @@
               </div>
               <!-- Tabela -->
               <div class="card overflow-x-auto">
-                <table class="min-w-full text-sm">
+                <table class="min-w-[950px] text-sm">
                   <thead>
                     <tr class="text-left border-b border-slate-200 dark:border-slate-700">
                       <th class="py-2 pr-3"><input type="checkbox" id="tx-select-all" /></th>
@@ -606,6 +607,6 @@
       </div>
     </section>
 
-  <script src="public/app.js"></script>
+  <script src="public/app.js?v=<?php echo $v; ?>"></script>
   </body>
 </html>

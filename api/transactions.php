@@ -90,6 +90,12 @@ try {
                 $params[':year'] = $year;
             }
         }
+        // Quando ano não é informado, permitir filtro por mês isolado (aplicado a todos os anos)
+        if (empty($_GET['year']) && !empty($_GET['month']) && $_GET['month'] !== 'todos') {
+            $monthOnly = intval($_GET['month']);
+            $sql .= " AND EXTRACT(MONTH FROM t.transaction_date) = :month_only";
+            $params[':month_only'] = $monthOnly;
+        }
         
         $sql .= " ORDER BY t.transaction_date DESC";
         
