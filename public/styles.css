@@ -54,6 +54,14 @@ body {
   color: var(--color-dark-text);
 }
 
+/* ✅ CORREÇÃO LIGHT MODE: Garante o fundo claro na área de conteúdo principal */
+main {
+  background-color: var(--color-light-bg);
+}
+.dark main {
+  background-color: var(--color-dark-bg);
+}
+
 /* Transições suaves (respeitando acessibilidade) */
 @media (prefers-reduced-motion: no-preference) {
   /* OBS: .chart-card foi removido daqui para evitar o bug de resize */
@@ -95,6 +103,12 @@ body {
   box-shadow: 0 0 8px rgba(74,105,189,.35);
 }
 
+.card table input[type="checkbox"] {
+  width: 1rem;
+  height: 1rem;
+  accent-color: var(--color-accent);  
+}
+
 /* -----------------------------
    BOTÕES
 ------------------------------ */
@@ -131,6 +145,9 @@ body {
   font-weight: 500;
 }
 
+.btn-toggle-tx {
+  background-color: rgb(241 245 249 / var(--tw-bg-opacity, 1));
+}
 
 /* -----------------------------
    CARDS, MODAIS E LAYOUT (Layout V3 Restaurado)
@@ -152,6 +169,7 @@ body {
   box-shadow: 0 4px 12px rgba(0,0,0,.05);
   padding: 1rem; /* Padding V3 restaurado */
   border: 1px solid var(--color-light-border);
+  color: var(--color-light-text);
 }
 .dark .card {
   background-color: var(--color-dark-card);
@@ -311,7 +329,8 @@ header {
   font-weight: 600;
   border-bottom: 1px solid var(--color-light-border);
   background-color: #f8fafc;
-  color: #334155;
+  /* ✅ CORREÇÃO LIGHT MODE: Garante cor de texto no header da tabela */
+  color: var(--color-light-muted);
 }
 .dark .card table thead th {
   border-color: var(--color-dark-border);
@@ -326,6 +345,7 @@ header {
 .dark .card table tbody td {
   border-color: var(--color-dark-border);
 }
+
 .card table tbody tr:hover {
   background-color: #f1f5f9;
 }
@@ -384,10 +404,60 @@ header {
   background-color: var(--color-dark-surface);
 }
 
+/* --- Troca de Logo no Sidebar --- */
+.sidebar-header {
+  padding: 1rem;
+  border-bottom: 1px solid var(--color-light-border);
+}
+.dark .sidebar-header {
+  border-bottom-color: var(--color-dark-border);
+}
+.sidebar-header .logo-light { display: block; }
+.sidebar-header .logo-dark { display: none; }
+.dark .sidebar-header .logo-light { display: none; }
+.dark .sidebar-header .logo-dark { display: block; }
+
+/* --- Página de Empresas --- */
+#companies-list li {
+  background-color: #f8fafc;
+  padding: 0.75rem 1rem;
+  border-radius: 0.5rem;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  border: 1px solid var(--color-light-border);
+}
+.dark #companies-list li {
+  background-color: var(--color-dark-surface);
+  border-color: var(--color-dark-border);
+}
+.btn-select {
+  padding: 0.5rem 1rem;
+  border-radius: 0.5rem;
+  font-weight: 500;
+  border: 1px solid var(--color-light-border);
+  background-color: var(--color-light-card);
+  color: var(--color-light-text);
+  cursor: pointer;
+}
+.dark .btn-select {
+  border-color: var(--color-dark-border);
+  background-color: var(--color-dark-surface);
+  color: var(--color-dark-text);
+}
+.btn-select.active {
+  background-color: var(--color-accent);
+  color: white;
+  border-color: var(--color-accent);
+  cursor: default;
+}
+
 /* Menu do perfil */
 #profile-menu {
   padding: 0.5rem;
   border: 1px solid var(--color-light-border);
+  /* ✅ CORREÇÃO LIGHT MODE: Garante fundo branco no menu */
+  background-color: var(--color-light-card);
 }
 .dark #profile-menu {
   background-color: var(--color-dark-card);

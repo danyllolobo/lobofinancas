@@ -88,8 +88,9 @@
       <div class="flex min-h-screen">
         <!-- Sidebar -->
         <aside id="sidebar" class="sidebar hidden md:block">
-          <div class="p-4">
-            <div class="font-['Playfair Display'] text-xl">Lobo Finance</div>
+          <div class="sidebar-header">
+            <img src="public/img/logo-ligh.png" alt="Lobo Finance Logo" class="logo-light h-8 w-auto">
+            <img src="public/img/logo-dark.png" alt="Lobo Finance Logo" class="logo-dark h-8 w-auto">
           </div>
           <nav class="px-2 space-y-1">
             <a href="#dashboard" class="nav-link active">Dashboard</a>
